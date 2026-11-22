@@ -287,6 +287,24 @@ class VaultPIIVaultService:
             created_at=created_at,
         )
 
+    def token_exists(self, opaque_token: str) -> bool:
+        """
+        Verifica si un token opaco `pat_...` existe en KV v2 consultando únicamente
+        sus metadatos (sin descifrar ni exponer PII directa), preservando minimización
+        al vincular expedientes clínicos segregados (MA-02).
+        """
+        token = self._validate_opaque_token(opaque_token)
+        self.ensure_initialized()
+
+        with self._client() as client:
+            meta_resp = self._request(
+                client,
+                "GET",
+                f"/v1/{self._kv_mount}/metadata/{self._kv_prefix}/{token}",
+                allow_404=True,
+            )
+            return meta_resp.status_code == 200
+
     def purge_patient(self, opaque_token: str) -> PurgePatientResponse:
         """
         Destrucción permanente de TODAS las versiones y metadatos del secreto en KV v2

@@ -21,12 +21,12 @@
 | Bloque | Peso Total | Completado | Avance del Bloque |
 | :--- | :---: | :---: | :---: |
 | **Fase 1:** Gobernanza Git, Entorno Base y Planeación | 10% | 10% | `10 / 10` |
-| **Módulo A:** Gobernanza, Identidad, Bóveda y ABAC (20% rúbrica) | 20% | 5% | `5 / 20` |
+| **Módulo A:** Gobernanza, Identidad, Bóveda y ABAC (20% rúbrica) | 20% | 20% | `20 / 20` |
 | **Módulo B:** Ciclo de Vida, Desidentificación y NIST SP 800-88 (25% rúbrica) | 22% | 0% | `0 / 22` |
 | **Módulo C:** Sandboxing, Syslog RFC 5424 y SIEM (25% rúbrica) | 22% | 0% | `0 / 22` |
 | **Fase 5:** Pruebas Automatizadas, GitHub Actions y Cloudflare Tunnel | 12% | 5% | `5 / 12` |
 | **Fase 6:** Documentación (MD/PDF) y Defensa Técnica (30% rúbrica) | 14% | 0% | `0 / 14` |
-| **TOTAL GLOBAL** | **100%** | **20%** | **`20%`** |
+| **TOTAL GLOBAL** | **100%** | **35%** | **`35%`** |
 
 ---
 
@@ -46,9 +46,9 @@
 | ID | Estado | Peso | Elemento / Entregable | Rama / Rol | Evidencia / Criterio de Verificación |
 | :--- | :---: | :---: | :--- | :--- | :--- |
 | `MA-01` | [x] | 5% | **Autenticación robusta:** FIDO2/WebAuthn (Passkeys) + respaldo Argon2id con *Salt* único + *Pepper* | `role/seguridad-infra` (Ubaldo) | `/auth/*` operativo (Argon2id `$argon2id$v=19$m=65536,t=3,p=2`, Passkeys ECDSA P-256, JWT+logout); verificado con `pytest` y `verify-ma01-ma02.sh` |
-| `MA-02` | [ ] | 5% | **Segregación y bóveda (Vault):** Identificadores directos aislados de atributos sensibles | `role/privacidad-ciclo-vida` & `role/seguridad-infra` | Bóveda Vault (`Transit AEAD + KV v2 + pat_...`) lista y verificada en `/vault/*`; pendiente vinculación con expedientes clínicos (`role/privacidad-ciclo-vida`) |
-| `MA-03` | [ ] | 5% | **Prevención de Function Creep (OPA/ABAC):** Validación de propósito declarado por consulta | `role/privacidad-ciclo-vida` (Jezreel) | Consultas sin propósito válido devuelven `403 Forbidden` |
-| `MA-04` | [ ] | 5% | **Minimización cuantitativa y cualitativa:** Filtrado de columnas y generalización según rol | `role/privacidad-ciclo-vida` (Jezreel) | Respuestas API filtradas/enmascaradas por rol |
+| `MA-02` | [x] | 5% | **Segregación y bóveda (Vault):** Identificadores directos aislados de atributos sensibles | `role/privacidad-ciclo-vida` & `role/seguridad-infra` | Bóveda Vault (`Transit AEAD + KV v2 + pat_...`) integrada con `/clinical/records` y `/clinical/records/segregated` (cero PII directa en PostgreSQL + compensación ante fallo BD); verificado con `pytest` y `verify-module-a.sh` |
+| `MA-03` | [x] | 5% | **Prevención de Function Creep (OPA/ABAC):** Validación de propósito declarado por consulta | `role/privacidad-ciclo-vida` (Jezreel) | `OPAClient` fail-closed + `hospital_abac.rego` (10/10 `opa test` + `opa check --strict`); consultas sin `X-Purpose`, fuera de propósito, singularización de analista y `admin_sec` devuelven `403 Forbidden` |
+| `MA-04` | [x] | 5% | **Minimización cuantitativa y cualitativa:** Filtrado de columnas y generalización según rol | `role/privacidad-ciclo-vida` (Jezreel) | `apply_minimization` proyecta `allowed_fields`, enmascara token en `enfermeria` (`pat_xxxx...yyyy`), generaliza `age_range` (`30-39`, `90+`) y `zip_generalized` (`72***`) en `analista` y oculta diagnósticos en `auditor_arco` |
 
 ---
 
@@ -105,3 +105,4 @@
 | 2026-11-21 | `F1-01`, `F1-02`, `F1-03`, `F1-04` | Equipo | `75535bc` | Infraestructura Docker Compose segmentada, esquema SQL, política OPA base, guía Ubuntu 26.04.1 LTS, CI y ramas por rol (**Avance: 10%**). |
 | 2026-11-21 | `F5-03`, `F5-04` | Ubaldo | PR #1 | Túnel `cloudflared` (`readyConnections=4`), 4 WAF Custom Rules, Rate Limiting `/auth/`, Zero Trust Access en `siem.` y cabeceras Zero Trust verificados con `PASS=14 / WARN=0 / FAIL=0` (**Avance: 15%**). |
 | 2026-11-21 | `MA-01` (+ bóveda `MA-02`) | Ubaldo | `role/seguridad-infra` | Autenticación Argon2id (salt único + HMAC-SHA256 pepper), FIDO2/WebAuthn Passkeys, sesiones JWT con revocación (`/auth/*`) y bóveda HashiCorp Vault Transit AEAD + KV v2 con tokens `pat_...` (`/vault/*`) verificados con `pytest` (11/11) y E2E Docker `verify-ma01-ma02.sh` (`PASS=14 / FAIL=0`) (**Avance: 20%**). |
+| 2026-11-22 | `MA-02`, `MA-03`, `MA-04` | Jezreel | `role/privacidad-ciclo-vida` | Integración segregada Vault+PostgreSQL (`/clinical/records`, `/clinical/records/segregated`, `/clinical/records/{id}/patient-identity`), cliente OPA fail-closed y política `hospital_abac.rego` (10/10 `opa test` + `opa check --strict`), motor de minimización cuantitativa/cualitativa por rol y verificación `pytest` (17/17), `ruff`, `verify-ma01-ma02.sh` (`PASS=14/FAIL=0`) y `verify-module-a.sh` (`PASS=9/FAIL=0`) (**Avance: 35%**). |

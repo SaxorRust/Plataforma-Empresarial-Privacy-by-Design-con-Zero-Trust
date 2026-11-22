@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     vault_kv_prefix: str = "patients"
     vault_timeout_seconds: float = 5.0
     opa_url: str = "http://opa:8181/v1/data/hospital/authz/decision"
+    opa_timeout_seconds: float = 5.0
     siem_host: str = "siem-collector"
     siem_port: int = 5514
     argon2_pepper: str = "dev_pepper_change_me"

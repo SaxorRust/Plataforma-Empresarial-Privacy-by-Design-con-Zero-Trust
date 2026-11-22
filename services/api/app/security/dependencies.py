@@ -1,12 +1,17 @@
 from collections.abc import Callable
 from functools import lru_cache
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import settings
 from app.models.auth import AuthenticatedUser, UserRole
+from app.policy.opa_client import OPAClient
 from app.repositories.auth_repo import PostgresUserRepository, UserRepository
+from app.repositories.clinical_repo import (
+    ClinicalRecordRepository,
+    PostgresClinicalRecordRepository,
+)
 from app.security.jwt_auth import JWTService, TokenAuthenticationError, TokenRevocationStore
 from app.security.passwords import Argon2idPasswordService
 from app.security.webauthn_service import WebAuthnChallengeStore, WebAuthnService
@@ -56,6 +61,11 @@ def _user_repository_singleton() -> PostgresUserRepository:
 
 
 @lru_cache(maxsize=1)
+def _clinical_repository_singleton() -> PostgresClinicalRecordRepository:
+    return PostgresClinicalRecordRepository(dsn=settings.database_url)
+
+
+@lru_cache(maxsize=1)
 def _vault_service_singleton() -> VaultPIIVaultService:
     return VaultPIIVaultService(
         vault_addr=settings.vault_addr,
@@ -65,6 +75,14 @@ def _vault_service_singleton() -> VaultPIIVaultService:
         kv_mount=settings.vault_kv_mount,
         kv_prefix=settings.vault_kv_prefix,
         timeout_seconds=settings.vault_timeout_seconds,
+    )
+
+
+@lru_cache(maxsize=1)
+def _opa_client_singleton() -> OPAClient:
+    return OPAClient(
+        opa_url=settings.opa_url,
+        timeout_seconds=settings.opa_timeout_seconds,
     )
 
 
@@ -84,8 +102,23 @@ def get_user_repository() -> UserRepository:
     return _user_repository_singleton()
 
 
+def get_clinical_repository() -> ClinicalRecordRepository:
+    return _clinical_repository_singleton()
+
+
 def get_vault_service() -> VaultPIIVaultService:
     return _vault_service_singleton()
+
+
+def get_opa_client() -> OPAClient:
+    return _opa_client_singleton()
+
+
+def get_declared_purpose(
+    x_purpose: str | None = Header(default=None, alias="X-Purpose"),
+) -> str:
+    """Extrae el propósito declarado (`X-Purpose`) para evaluación obligatoria en OPA (MA-03)."""
+    return x_purpose.strip() if x_purpose else ""
 
 
 def get_current_user(

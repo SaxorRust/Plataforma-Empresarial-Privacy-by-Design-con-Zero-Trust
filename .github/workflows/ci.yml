@@ -1,0 +1,48 @@
+name: CI - Privacy-by-Design Zero Trust
+
+on:
+  push:
+    branches: ["main", "role/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  lint-and-test:
+    name: Lint (Ruff) & Pruebas Automatizadas (Pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/api/requirements.txt
+
+      - name: Verificar estilo y linting con Ruff
+        run: ruff check services/ tests/
+
+      - name: Ejecutar suite de pruebas Pytest
+        run: pytest -v tests/
+
+  validate-infra:
+    name: Validación Docker Compose y Políticas OPA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Validar sintaxis de docker-compose.yml
+        run: |
+          cp .env.example .env
+          docker compose config -q
+
+      - name: Validar sintaxis de políticas Rego (OPA)
+        run: |
+          docker run --rm -v "${{ github.workspace }}/infra/opa/policies:/policies:ro" \
+            openpolicyagent/opa:0.69.0-rootless check /policies

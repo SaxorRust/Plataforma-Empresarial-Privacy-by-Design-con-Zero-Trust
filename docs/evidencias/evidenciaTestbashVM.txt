@@ -1,0 +1,35 @@
+vboxuser@KEYCLOAK:~/Plataforma-Empresarial-Privacy-by-Design-con-Zero-Trust$ ./infra/scripts/verify-domain-security.sh tralaleritosmigajeros.uk
+========================================================================
+ Verificación de Seguridad y Conectividad: https://tralaleritosmigajeros.uk
+========================================================================
+
+--- 1. Redirección HTTP -> HTTPS ---
+[PASS] HTTP redirige a HTTPS (301 -> Location: https://tralaleritosmigajeros.uk/health)
+
+--- 2. Conectividad HTTPS, Cloudflare Proxy y Salud de API ---
+[PASS] GET https://tralaleritosmigajeros.uk/health respondió HTTP 200: {"status":"ok","service":"hospital-privacy-api","environment":"development"}
+[PASS] Tráfico pasando por borde de Cloudflare (cf-ray: a5e5521a28377bc7-DFW)
+[PASS] Endpoint /edge-check confirma Cloudflare Tunnel: {"via_cloudflare":true,"cf_ray":"a5e5521d9b5fdc12-DFW","cf_country":"MX","forwarded_proto":"https","host":"tralaleritosmigajeros.uk"}
+
+--- 3. Cabeceras de Seguridad HTTP (Zero Trust / Privacy-by-Design) ---
+[PASS] strict-transport-security: max-age=31536000
+[PASS] x-content-type-options: nosniff
+[PASS] x-frame-options: DENY
+[PASS] referrer-policy: no-referrer
+[PASS] content-security-policy: default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+[PASS] cache-control: no-store, no-cache, must-revalidate, max-age=0
+
+--- 4. Verificación TLS (>= 1.2) ---
+[PASS] Certificado TLS válido (ssl_verify_result=0, TLS >= 1.2)
+
+--- 5. Sondas WAF (Bloqueo de rutas sensibles y payloads maliciosos) ---
+[PASS] WAF bloqueó acceso a /.env (HTTP 403)
+[PASS] WAF bloqueó sonda SQLi básica (HTTP 403)
+
+--- 6. Revisión de exposición del panel SIEM (siem.tralaleritosmigajeros.uk) ---
+[PASS] siem.tralaleritosmigajeros.uk protegido con Cloudflare Zero Trust Access (302 -> location: https://papoi.cloudflareaccess.com/cdn-cgi/access/login/siem.tralaleritosmigajeros.uk?kid=94a67c4ab364f1ac8c713f190c317dbdcb7e0cfa6275f41d15a31fffacd4a0a9&meta=eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IjdhODcyM2QwYTBjZGEwMjlkYjdiMTljMzA1OTUyNmM5ZmYzZjhiM2U2NzY5NTk2YzZlM2Q0MDc2NzFkMDAwYjUifQ.eyJ0eXBlIjoibWV0YSIsImF1ZCI6Ijk0YTY3YzRhYjM2NGYxYWM4YzcxM2YxOTBjMzE3ZGJkY2I3ZTBjZmE2Mjc1ZjQxZDE1YTMxZmZmYWNkNGEwYTkiLCJob3N0bmFtZSI6InNpZW0udHJhbGFsZXJpdG9zbWlnYWplcm9zLnVrIiwicmVkaXJlY3RfdXJsIjoiL2hlYWx0aCIsInNlcnZpY2VfdG9rZW5fc3RhdHVzIjpmYWxzZSwiaXNfd2FycCI6ZmFsc2UsImlzX2dhdGV3YXkiOmZhbHNlLCJleHAiOjE3OTUzMjM0MDgsIm5iZiI6MTc5NTMyMzEwOCwiaWF0IjoxNzk1MzIzMTA4LCJhdXRoX3N0YXR1cyI6Ik5PTkUiLCJtdGxzX2F1dGgiOnsiY2VydF9pc3N1ZXJfZG4iOiIiLCJjZXJ0X3NlcmlhbCI6IiIsImNlcnRfaXNzdWVyX3NraSI6IiIsImNlcnRfcHJlc2VudGVkIjpmYWxzZSwiY29tbW9uX25hbWUiOiIiLCJhdXRoX3N0YXR1cyI6Ik5PTkUifSwicmVhbF9jb3VudHJ5IjoiTVgiLCJhcHBfc2Vzc2lvbl9oYXNoIjoiMGQyMDE2MTI1MTQ4NDE1MTQ3MGUyYWM4OWU1MTg0NWZiYWFhNDE4YThkMzBhNzNjMWUyMmUxZTU2MWZmNjA4ZCJ9.zWxIlD1zYI02CerqQHS5d8s_YMbV842ltqIgc6GngNfhZhEdodODmytRCHvEQFOLLSrqZD5ljNwB8TMXhA9vkf5khLeKQ-z9xiqqgxg2ykra-MTJ_wcZpGZLdrK2rVgEJzpmUOALT9C82IrZ-25Rjz1l9k8oAShXctd8YegX8KvYtA8b0w0i0PcRaotzouf6ZpIEpiICd6Av5wOC8O4jqBEFvp5mpHcfy5uYxkyM0rKkoYLLDlYVvNdAeJPiOgXLEhQ3kuFK3tTAy_4g4uvkHiMVXEcKYNGKSg2CxdhFYUqO0NpgBT1rdDfIziVyOsSY7wPkekldhxja9VHyQJeocQ&redirect_url=%2Fhealth)
+
+========================================================================
+ RESUMEN: PASS=14 | WARN=0 | FAIL=0
+========================================================================
+vboxuser@KEYCLOAK:~/Plataforma-Empresarial-Privacy-by-Design-con-Zero-Trust$

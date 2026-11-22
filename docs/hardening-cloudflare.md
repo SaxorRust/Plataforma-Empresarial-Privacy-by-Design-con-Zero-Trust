@@ -60,8 +60,13 @@ En **Security → WAF → Custom rules → Create rule**, agrega estas 4 reglas 
 - **Expression:**
 ```text
 (lower(http.request.uri.query) contains "union select") or
+(lower(http.request.uri.query) contains "union%20select") or
+(lower(http.request.uri.query) contains "union+select") or
 (lower(http.request.uri.query) contains "' or '1'='1") or
+(lower(http.request.uri.query) contains "%27%20or%20%271%27") or
+(lower(http.request.uri.query) contains "%27+or+%271%27") or
 (lower(http.request.uri.query) contains "<script") or
+(lower(http.request.uri.query) contains "%3cscript") or
 (lower(http.request.uri.query) contains "javascript:") or
 (lower(http.request.uri.query) contains "information_schema")
 ```

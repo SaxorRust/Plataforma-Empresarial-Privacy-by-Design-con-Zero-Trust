@@ -1,6 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.middleware import SecurityHeadersMiddleware
 
 app = FastAPI(
     title=settings.app_name,
@@ -11,6 +13,23 @@ app = FastAPI(
     ),
 )
 
+allowed_origins = [
+    settings.webauthn_origin,
+    "https://tralaleritosmigajeros.uk",
+    "https://app.tralaleritosmigajeros.uk",
+]
+if settings.app_env == "development":
+    allowed_origins.extend(["http://localhost:8000", "http://127.0.0.1:8000"])
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=sorted(set(allowed_origins)),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Purpose", "X-Request-ID"],
+)
+app.add_middleware(SecurityHeadersMiddleware)
+
 
 @app.get("/health", tags=["infraestructura"])
 def health_check() -> dict[str, str]:
@@ -18,6 +37,22 @@ def health_check() -> dict[str, str]:
         "status": "ok",
         "service": "hospital-privacy-api",
         "environment": settings.app_env,
+    }
+
+
+@app.get("/edge-check", tags=["infraestructura"])
+def edge_check(request: Request) -> dict[str, object]:
+    """
+    Endpoint de diagnóstico seguro para verificar conectividad a través de
+    Cloudflare Tunnel (`CF-Ray`, `CF-IPCountry`, `X-Forwarded-Proto`) sin exponer secretos.
+    """
+    cf_ray = request.headers.get("cf-ray")
+    return {
+        "via_cloudflare": bool(cf_ray),
+        "cf_ray": cf_ray,
+        "cf_country": request.headers.get("cf-ipcountry"),
+        "forwarded_proto": request.headers.get("x-forwarded-proto"),
+        "host": request.headers.get("host"),
     }
 
 

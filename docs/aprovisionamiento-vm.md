@@ -62,8 +62,9 @@ cloudflared --version
 cp .env.example .env
 
 # Generar valores seguros de ejemplo en consola para copiarlos a .env:
+# Nota: Vault rechaza el prefijo reservado 'hvs.' o puntos en VAULT_DEV_ROOT_TOKEN_ID
 echo "POSTGRES_PASSWORD=$(openssl rand -hex 20)"
-echo "VAULT_DEV_ROOT_TOKEN_ID=hvs.$(openssl rand -hex 16)"
+echo "VAULT_DEV_ROOT_TOKEN_ID=zt-vault-$(openssl rand -hex 16)"
 echo "ARGON2_PEPPER=$(openssl rand -hex 32)"
 echo "JWT_SECRET_KEY=$(openssl rand -hex 32)"
 ```

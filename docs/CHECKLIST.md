@@ -24,9 +24,9 @@
 | **Módulo A:** Gobernanza, Identidad, Bóveda y ABAC (20% rúbrica) | 20% | 0% | `0 / 20` |
 | **Módulo B:** Ciclo de Vida, Desidentificación y NIST SP 800-88 (25% rúbrica) | 22% | 0% | `0 / 22` |
 | **Módulo C:** Sandboxing, Syslog RFC 5424 y SIEM (25% rúbrica) | 22% | 0% | `0 / 22` |
-| **Fase 5:** Pruebas Automatizadas, GitHub Actions y Cloudflare Tunnel | 12% | 0% | `0 / 12` |
+| **Fase 5:** Pruebas Automatizadas, GitHub Actions y Cloudflare Tunnel | 12% | 5% | `5 / 12` |
 | **Fase 6:** Documentación (MD/PDF) y Defensa Técnica (30% rúbrica) | 14% | 0% | `0 / 14` |
-| **TOTAL GLOBAL** | **100%** | **10%** | **`10%`** |
+| **TOTAL GLOBAL** | **100%** | **15%** | **`15%`** |
 
 ---
 
@@ -80,8 +80,8 @@
 | :--- | :---: | :---: | :--- | :--- | :--- |
 | `F5-01` | [ ] | 4% | **Suite de pruebas automatizadas:** Unitarias, integración, políticas ABAC, $k$-anonimato/$l$-diversidad, NIST 800-88 y correlación SIEM | Todos | `pytest` corriendo y en verde (`100% pass`) |
 | `F5-02` | [ ] | 3% | **GitHub Actions (CI):** Pipeline en `.github/workflows/ci.yml` ejecutando linter, tests y validación de seguridad en PRs a `main` | `role/seguridad-infra` (Ubaldo) | Checks verdes en GitHub Actions |
-| `F5-03` | [ ] | 3% | **Túnel `cloudflared`:** Configuración reproducible para exponer la plataforma local hacia `tralaleritosmigajeros.uk` | `role/seguridad-infra` (Ubaldo) | Dominio resolviendo y sirviendo la app vía túnel cifrado |
-| `F5-04` | [ ] | 2% | **Endurecimiento Cloudflare:** SSL/TLS Strict, reglas WAF/Rate Limiting, cabeceras de seguridad y políticas Zero Trust | Ubaldo & Samuel | Verificación HTTPS, cabeceras y bloqueo de abuso en el dominio |
+| `F5-03` | [x] | 3% | **Túnel `cloudflared`:** Configuración reproducible para exponer la plataforma local hacia `tralaleritosmigajeros.uk` | `role/seguridad-infra` (Ubaldo) | `readyConnections: 4`, 0 errores, `tralaleritosmigajeros.uk` + `app.` + `siem.` operativos |
+| `F5-04` | [x] | 2% | **Endurecimiento Cloudflare:** SSL/TLS Strict, reglas WAF/Rate Limiting, cabeceras de seguridad y políticas Zero Trust | Ubaldo & Samuel | `verify-domain-security.sh` → `PASS=14 \| WARN=0 \| FAIL=0` + Access OTP en `siem.` |
 
 ---
 
@@ -102,4 +102,5 @@
 | 2026-11-21 | Inicialización | Equipo | `762babe` | Lectura de pliego técnico y `pendientes.txt`. |
 | 2026-11-21 | Datos institucionales y stack base | Ubaldo | `93d3217` | Agregados `informacionInstitucional.txt`, `escenarioYtecnologias.txt` y copia PDF inicial. |
 | 2026-11-21 | Checklist y guía `cloudflared` | Ubaldo | `5b8a884` | `.gitignore`, `docs/CHECKLIST.md`, `infra/cloudflared/`. |
-| 2026-11-21 | `F1-01`, `F1-02`, `F1-03`, `F1-04` | Equipo | `main` | Infraestructura Docker Compose segmentada, esquema SQL, política OPA base, guía Ubuntu 26.04.1 LTS, CI y ramas por rol (**Avance: 10%**). |
+| 2026-11-21 | `F1-01`, `F1-02`, `F1-03`, `F1-04` | Equipo | `75535bc` | Infraestructura Docker Compose segmentada, esquema SQL, política OPA base, guía Ubuntu 26.04.1 LTS, CI y ramas por rol (**Avance: 10%**). |
+| 2026-11-21 | `F5-03`, `F5-04` | Ubaldo | PR #1 | Túnel `cloudflared` (`readyConnections=4`), 4 WAF Custom Rules, Rate Limiting `/auth/`, Zero Trust Access en `siem.` y cabeceras Zero Trust verificados con `PASS=14 / WARN=0 / FAIL=0` (**Avance: 15%**). |

@@ -127,3 +127,46 @@ test_admin_sec_separation_of_duties if {
 	d.allow == false
 	contains(d.reason, "separación de funciones")
 }
+
+test_admin_sec_allowed_ttl_maintenance_without_clinical_fields if {
+	d := decision with input as {
+		"role": "admin_sec",
+		"purpose": "mantenimiento_ttl",
+		"action": "run_ttl_sweep",
+	}
+	d.allow == true
+	count(d.allowed_fields) == 0
+}
+
+test_auditor_arco_erase_and_ttl_sweep_allowed if {
+	d_erase := decision with input as {
+		"role": "auditor_arco",
+		"purpose": "ejercicio_arco",
+		"action": "erase_nist_800_88",
+	}
+	d_erase.allow == true
+
+	d_ttl := decision with input as {
+		"role": "auditor_arco",
+		"purpose": "ejercicio_arco",
+		"action": "run_ttl_sweep",
+	}
+	d_ttl.allow == true
+}
+
+test_medico_cannot_erase_or_export_anonymized if {
+	d_erase := decision with input as {
+		"role": "medico",
+		"purpose": "atencion_medica",
+		"action": "erase_nist_800_88",
+	}
+	d_erase.allow == false
+
+	d_exp := decision with input as {
+		"role": "medico",
+		"purpose": "atencion_medica",
+		"action": "export_anonymized",
+	}
+	d_exp.allow == false
+}
+

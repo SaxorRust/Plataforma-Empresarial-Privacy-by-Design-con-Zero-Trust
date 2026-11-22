@@ -1,19 +1,39 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.lifecycle.ttl_worker import TTLBackgroundScheduler
 from app.middleware import SecurityHeadersMiddleware
 from app.routers.auth import router as auth_router
 from app.routers.clinical import router as clinical_router
+from app.routers.lifecycle import router as lifecycle_router
 from app.routers.vault import router as vault_router
+from app.security.dependencies import get_ttl_sweep_service
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    ttl_provider = application.dependency_overrides.get(
+        get_ttl_sweep_service, get_ttl_sweep_service
+    )
+    scheduler = TTLBackgroundScheduler(ttl_provider())
+    await scheduler.start()
+    try:
+        yield
+    finally:
+        await scheduler.stop()
+
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.3.0",
+    version="0.4.0",
     description=(
         "Plataforma Empresarial Privacy-by-Design con Zero Trust y Auditoría SIEM "
         "(Escenario Hospitalario — BUAP FCC)"
     ),
+    lifespan=lifespan,
 )
 
 allowed_origins = [
@@ -35,6 +55,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.include_router(auth_router)
 app.include_router(vault_router)
 app.include_router(clinical_router)
+app.include_router(lifecycle_router)
 
 
 @app.get("/health", tags=["infraestructura"])

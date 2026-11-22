@@ -108,7 +108,21 @@ valid_role_purpose if {
 valid_role_purpose if {
 	input.role == "auditor_arco"
 	input.purpose == "ejercicio_arco"
-	input.action in ["read_record", "read_single_record", "read_audit", "erase_nist_800_88"]
+	input.action in [
+		"read_record",
+		"read_single_record",
+		"read_audit",
+		"erase_nist_800_88",
+		"run_ttl_sweep",
+	]
+}
+
+# Separación de funciones: admin_sec solo puede ejecutar mantenimiento TTL
+# (nunca leer expedientes ni diagnósticos clínicos).
+valid_role_purpose if {
+	input.role == "admin_sec"
+	input.purpose == "mantenimiento_ttl"
+	input.action == "run_ttl_sweep"
 }
 
 valid_role_purpose if {

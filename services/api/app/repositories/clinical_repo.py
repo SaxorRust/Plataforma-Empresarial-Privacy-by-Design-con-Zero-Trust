@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
+import secrets
 from threading import Lock
-from typing import Protocol
+from typing import Literal, Protocol
 from uuid import UUID, uuid4
 
 import psycopg
@@ -45,6 +46,19 @@ class ClinicalRecordRepository(Protocol):
         department: str | None = None,
         ttl_expires_at: datetime | None = None,
     ) -> MedicalRecordEntity | None: ...
+
+    def list_expired_records(self, now: datetime) -> list[MedicalRecordEntity]: ...
+
+    def overwrite_and_delete_record(self, record_id: UUID) -> bool: ...
+
+    def count_active_records_for_token(self, opaque_patient_token: str) -> int: ...
+
+    def overwrite_and_sanitize_records_for_token(
+        self,
+        opaque_patient_token: str,
+        *,
+        method: Literal["NIST_800_88_CLEAR", "NIST_800_88_PURGE"],
+    ) -> tuple[list[UUID], int]: ...
 
 
 class InMemoryClinicalRecordRepository:
@@ -170,6 +184,121 @@ class InMemoryClinicalRecordRepository:
                 is_sanitized=True,
                 created_at=existing.created_at,
             )
+
+    def list_expired_records(self, now: datetime) -> list[MedicalRecordEntity]:
+        with self._lock:
+            return [
+                rec
+                for rec in self._records.values()
+                if not rec.is_sanitized
+                and rec.ttl_expires_at is not None
+                and rec.ttl_expires_at <= now
+            ]
+
+    def overwrite_and_delete_record(self, record_id: UUID) -> bool:
+        with self._lock:
+            existing = self._records.get(record_id)
+            if existing is None:
+                return False
+            # Sobrescritura previa a la eliminación definitiva
+            self._records[record_id] = MedicalRecordEntity(
+                record_id=existing.record_id,
+                opaque_patient_token=existing.opaque_patient_token,
+                age_years=0,
+                zip_prefix="00000",
+                gender="no_especificado",
+                diagnosis_cie10="00000000",
+                diagnosis_summary="0" * max(16, len(existing.diagnosis_summary)),
+                department="00000000",
+                purpose_scope=existing.purpose_scope,
+                ttl_expires_at=existing.ttl_expires_at,
+                is_sanitized=True,
+                created_at=existing.created_at,
+            )
+            del self._records[record_id]
+            return True
+
+    def count_active_records_for_token(self, opaque_patient_token: str) -> int:
+        with self._lock:
+            return sum(
+                1
+                for rec in self._records.values()
+                if rec.opaque_patient_token == opaque_patient_token and not rec.is_sanitized
+            )
+
+    def overwrite_and_sanitize_records_for_token(
+        self,
+        opaque_patient_token: str,
+        *,
+        method: Literal["NIST_800_88_CLEAR", "NIST_800_88_PURGE"],
+    ) -> tuple[list[UUID], int]:
+        passes = 3 if method == "NIST_800_88_PURGE" else 2
+        tombstone_code = "PURGED" if method == "NIST_800_88_PURGE" else "SANITIZED"
+        tombstone_dept = "purged" if method == "NIST_800_88_PURGE" else "sanitized"
+        tombstone_summary = (
+            "[NIST SP 800-88 PURGE - CRYPTOGRAPHICALLY ERASED]"
+            if method == "NIST_800_88_PURGE"
+            else "[NIST SP 800-88 CLEAR - OVERWRITTEN]"
+        )
+
+        sanitized_ids: list[UUID] = []
+        with self._lock:
+            targets = [
+                rec
+                for rec in self._records.values()
+                if rec.opaque_patient_token == opaque_patient_token and not rec.is_sanitized
+            ]
+            for rec in targets:
+                if method == "NIST_800_88_PURGE":
+                    # Pasada 1: datos pseudoaleatorios criptográficos
+                    self._records[rec.record_id] = MedicalRecordEntity(
+                        record_id=rec.record_id,
+                        opaque_patient_token=rec.opaque_patient_token,
+                        age_years=secrets.randbelow(100),
+                        zip_prefix=f"{secrets.randbelow(100000):05d}",
+                        gender=secrets.token_hex(4),
+                        diagnosis_cie10=secrets.token_hex(6),
+                        diagnosis_summary=secrets.token_hex(32),
+                        department=secrets.token_hex(8),
+                        purpose_scope=rec.purpose_scope,
+                        ttl_expires_at=rec.ttl_expires_at,
+                        is_sanitized=False,
+                        created_at=rec.created_at,
+                    )
+                # Pasada intermedia de ceros
+                self._records[rec.record_id] = MedicalRecordEntity(
+                    record_id=rec.record_id,
+                    opaque_patient_token=rec.opaque_patient_token,
+                    age_years=0,
+                    zip_prefix="00000",
+                    gender="00000000",
+                    diagnosis_cie10="00000000",
+                    diagnosis_summary="0" * max(32, len(rec.diagnosis_summary)),
+                    department="00000000",
+                    purpose_scope=rec.purpose_scope,
+                    ttl_expires_at=rec.ttl_expires_at,
+                    is_sanitized=False,
+                    created_at=rec.created_at,
+                )
+                # Pasada final: marcador canónico NIST SP 800-88 + is_sanitized=TRUE
+                self._records[rec.record_id] = MedicalRecordEntity(
+                    record_id=rec.record_id,
+                    opaque_patient_token=rec.opaque_patient_token,
+                    age_years=0,
+                    zip_prefix="00000",
+                    gender="no_especificado",
+                    diagnosis_cie10=tombstone_code,
+                    diagnosis_summary=tombstone_summary,
+                    department=tombstone_dept,
+                    purpose_scope=rec.purpose_scope,
+                    ttl_expires_at=rec.ttl_expires_at,
+                    is_sanitized=True,
+                    created_at=rec.created_at,
+                )
+                sanitized_ids.append(rec.record_id)
+
+        sanitized_ids.sort()
+        return sanitized_ids, passes
 
 
 class PostgresClinicalRecordRepository:
@@ -369,3 +498,185 @@ class PostgresClinicalRecordRepository:
             ) from exc
 
         return self._row_to_entity(row) if row else None
+
+    def list_expired_records(self, now: datetime) -> list[MedicalRecordEntity]:
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT {self._COLUMNS}
+                        FROM clinical.medical_records
+                        WHERE is_sanitized = FALSE
+                          AND ttl_expires_at IS NOT NULL
+                          AND ttl_expires_at <= %s
+                        ORDER BY ttl_expires_at ASC
+                        """,
+                        (now,),
+                    )
+                    rows = cur.fetchall()
+        except psycopg.OperationalError as exc:
+            raise DatabaseUnavailableError(
+                "Error de conexión al consultar registros con TTL expirado."
+            ) from exc
+
+        return [self._row_to_entity(row) for row in rows]
+
+    def overwrite_and_delete_record(self, record_id: UUID) -> bool:
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    # Pasada de sobrescritura segura previa a la eliminación definitiva
+                    cur.execute(
+                        """
+                        UPDATE clinical.medical_records
+                        SET age_years = 0,
+                            zip_prefix = '00000',
+                            gender = 'no_especificado',
+                            diagnosis_cie10 = '00000000',
+                            diagnosis_summary = %s,
+                            department = '00000000',
+                            is_sanitized = TRUE
+                        WHERE record_id = %s
+                        """,
+                        ("0" * 64, record_id),
+                    )
+                conn.commit()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        DELETE FROM clinical.medical_records
+                        WHERE record_id = %s
+                        """,
+                        (record_id,),
+                    )
+                    deleted = cur.rowcount > 0
+                conn.commit()
+        except psycopg.OperationalError as exc:
+            raise DatabaseUnavailableError(
+                "Error de conexión al purgar registro con TTL expirado."
+            ) from exc
+
+        return deleted
+
+    def count_active_records_for_token(self, opaque_patient_token: str) -> int:
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM clinical.medical_records
+                        WHERE opaque_patient_token = %s
+                          AND is_sanitized = FALSE
+                        """,
+                        (opaque_patient_token,),
+                    )
+                    row = cur.fetchone()
+        except psycopg.OperationalError as exc:
+            raise DatabaseUnavailableError(
+                "Error de conexión al contar registros activos del paciente."
+            ) from exc
+
+        return int(row[0]) if row else 0
+
+    def overwrite_and_sanitize_records_for_token(
+        self,
+        opaque_patient_token: str,
+        *,
+        method: Literal["NIST_800_88_CLEAR", "NIST_800_88_PURGE"],
+    ) -> tuple[list[UUID], int]:
+        passes = 3 if method == "NIST_800_88_PURGE" else 2
+        tombstone_code = "PURGED" if method == "NIST_800_88_PURGE" else "SANITIZED"
+        tombstone_dept = "purged" if method == "NIST_800_88_PURGE" else "sanitized"
+        tombstone_summary = (
+            "[NIST SP 800-88 PURGE - CRYPTOGRAPHICALLY ERASED]"
+            if method == "NIST_800_88_PURGE"
+            else "[NIST SP 800-88 CLEAR - OVERWRITTEN]"
+        )
+
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT record_id
+                        FROM clinical.medical_records
+                        WHERE opaque_patient_token = %s
+                          AND is_sanitized = FALSE
+                        ORDER BY record_id ASC
+                        """,
+                        (opaque_patient_token,),
+                    )
+                    target_ids = [row[0] for row in cur.fetchall()]
+
+                if not target_ids:
+                    return [], passes
+
+                if method == "NIST_800_88_PURGE":
+                    # Pasada 1: sobrescritura con bytes pseudoaleatorios criptográficos
+                    with conn.cursor() as cur:
+                        for rec_id in target_ids:
+                            cur.execute(
+                                """
+                                UPDATE clinical.medical_records
+                                SET age_years = %s,
+                                    zip_prefix = %s,
+                                    gender = %s,
+                                    diagnosis_cie10 = %s,
+                                    diagnosis_summary = %s,
+                                    department = %s
+                                WHERE record_id = %s
+                                """,
+                                (
+                                    secrets.randbelow(100),
+                                    f"{secrets.randbelow(100000):05d}",
+                                    secrets.token_hex(4),
+                                    secrets.token_hex(6),
+                                    secrets.token_hex(32),
+                                    secrets.token_hex(8),
+                                    rec_id,
+                                ),
+                            )
+                    conn.commit()
+
+                # Pasada intermedia: sobrescritura uniforme de ceros
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE clinical.medical_records
+                        SET age_years = 0,
+                            zip_prefix = '00000',
+                            gender = '00000000',
+                            diagnosis_cie10 = '00000000',
+                            diagnosis_summary = %s,
+                            department = '00000000'
+                        WHERE record_id = ANY(%s)
+                        """,
+                        ("0" * 64, target_ids),
+                    )
+                conn.commit()
+
+                # Pasada final: marcador canónico NIST SP 800-88 + bloqueo is_sanitized=TRUE
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE clinical.medical_records
+                        SET age_years = 0,
+                            zip_prefix = '00000',
+                            gender = 'no_especificado',
+                            diagnosis_cie10 = %s,
+                            diagnosis_summary = %s,
+                            department = %s,
+                            is_sanitized = TRUE
+                        WHERE record_id = ANY(%s)
+                        """,
+                        (tombstone_code, tombstone_summary, tombstone_dept, target_ids),
+                    )
+                conn.commit()
+        except psycopg.OperationalError as exc:
+            raise DatabaseUnavailableError(
+                "Error de conexión durante sobrescritura NIST SP 800-88."
+            ) from exc
+
+        return sorted(target_ids), passes

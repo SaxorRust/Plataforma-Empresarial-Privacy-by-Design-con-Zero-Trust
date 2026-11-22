@@ -22,11 +22,11 @@
 | :--- | :---: | :---: | :---: |
 | **Fase 1:** Gobernanza Git, Entorno Base y Planeación | 10% | 10% | `10 / 10` |
 | **Módulo A:** Gobernanza, Identidad, Bóveda y ABAC (20% rúbrica) | 20% | 20% | `20 / 20` |
-| **Módulo B:** Ciclo de Vida, Desidentificación y NIST SP 800-88 (25% rúbrica) | 22% | 0% | `0 / 22` |
+| **Módulo B:** Ciclo de Vida, Desidentificación y NIST SP 800-88 (25% rúbrica) | 22% | 22% | `22 / 22` |
 | **Módulo C:** Sandboxing, Syslog RFC 5424 y SIEM (25% rúbrica) | 22% | 0% | `0 / 22` |
 | **Fase 5:** Pruebas Automatizadas, GitHub Actions y Cloudflare Tunnel | 12% | 5% | `5 / 12` |
 | **Fase 6:** Documentación (MD/PDF) y Defensa Técnica (30% rúbrica) | 14% | 0% | `0 / 14` |
-| **TOTAL GLOBAL** | **100%** | **35%** | **`35%`** |
+| **TOTAL GLOBAL** | **100%** | **57%** | **`57%`** |
 
 ---
 
@@ -47,7 +47,7 @@
 | :--- | :---: | :---: | :--- | :--- | :--- |
 | `MA-01` | [x] | 5% | **Autenticación robusta:** FIDO2/WebAuthn (Passkeys) + respaldo Argon2id con *Salt* único + *Pepper* | `role/seguridad-infra` (Ubaldo) | `/auth/*` operativo (Argon2id `$argon2id$v=19$m=65536,t=3,p=2`, Passkeys ECDSA P-256, JWT+logout); verificado con `pytest` y `verify-ma01-ma02.sh` |
 | `MA-02` | [x] | 5% | **Segregación y bóveda (Vault):** Identificadores directos aislados de atributos sensibles | `role/privacidad-ciclo-vida` & `role/seguridad-infra` | Bóveda Vault (`Transit AEAD + KV v2 + pat_...`) integrada con `/clinical/records` y `/clinical/records/segregated` (cero PII directa en PostgreSQL + compensación ante fallo BD); verificado con `pytest` y `verify-module-a.sh` |
-| `MA-03` | [x] | 5% | **Prevención de Function Creep (OPA/ABAC):** Validación de propósito declarado por consulta | `role/privacidad-ciclo-vida` (Jezreel) | `OPAClient` fail-closed + `hospital_abac.rego` (10/10 `opa test` + `opa check --strict`); consultas sin `X-Purpose`, fuera de propósito, singularización de analista y `admin_sec` devuelven `403 Forbidden` |
+| `MA-03` | [x] | 5% | **Prevención de Function Creep (OPA/ABAC):** Validación de propósito declarado por consulta | `role/privacidad-ciclo-vida` (Jezreel) | `OPAClient` fail-closed + `hospital_abac.rego` (13/13 `opa test` + `opa check --strict`); consultas sin `X-Purpose`, fuera de propósito, singularización de analista y `admin_sec` devuelven `403 Forbidden` |
 | `MA-04` | [x] | 5% | **Minimización cuantitativa y cualitativa:** Filtrado de columnas y generalización según rol | `role/privacidad-ciclo-vida` (Jezreel) | `apply_minimization` proyecta `allowed_fields`, enmascara token en `enfermeria` (`pat_xxxx...yyyy`), generaliza `age_range` (`30-39`, `90+`) y `zip_generalized` (`72***`) en `analista` y oculta diagnósticos en `auditor_arco` |
 
 ---
@@ -56,10 +56,10 @@
 
 | ID | Estado | Peso | Elemento / Entregable | Rama / Rol | Evidencia / Criterio de Verificación |
 | :--- | :---: | :---: | :--- | :--- | :--- |
-| `MB-01` | [ ] | 4% | **Retención temporal (TTL):** Tarea automatizada que purga registros/tokens expirados | `role/privacidad-ciclo-vida` (Jezreel) | Job programado ejecutándose y limpiando registros vencidos |
-| `MB-02` | [ ] | 6% | **Exportación desidentificada:** Método *Safe Harbor* (18 identificadores) + $k$-anonimato agregado con $l$-diversidad | `role/privacidad-ciclo-vida` (Jezreel) | Dataset exportado validado sin PII directa y con $k,l$ verificados |
-| `MB-03` | [ ] | 6% | **Derechos ARCO + NIST SP 800-88:** Cancelación/Supresión con sobrescritura segura (*Clear/Purge*) y limpieza de buffers en memoria | `role/privacidad-ciclo-vida` (Jezreel) | Flujo completo de borrado irreversible comprobable en BD/bóveda |
-| `MB-04` | [ ] | 6% | **Certificado de Sanitización:** Emisión automática en JSON y PDF firmado con hash `SHA-256` | `role/privacidad-ciclo-vida` (Jezreel) | Archivos `.json` y `.pdf` generados y hash `SHA-256` verificable |
+| `MB-01` | [x] | 4% | **Retención temporal (TTL):** Tarea automatizada que purga registros/tokens expirados | `role/privacidad-ciclo-vida` (Jezreel) | `TTLBackgroundScheduler` activo en `lifespan` + `GET /lifecycle/ttl/status` + `POST /lifecycle/ttl/sweep` (sobrescribe y elimina expirados + purga tokens huérfanos en Vault); verificado con `pytest` y `verify-module-b.sh` |
+| `MB-02` | [x] | 6% | **Exportación desidentificada:** Método *Safe Harbor* (18 identificadores) + $k$-anonimato agregado con $l$-diversidad | `role/privacidad-ciclo-vida` (Jezreel) | `POST /lifecycle/exports/anonymized` y `GET /lifecycle/exports/anonymized.csv` (18 IDs HIPAA removidos, tope `90+`, retícula adaptativa $(k,l)$ fail-closed); verificado con `pytest` y `verify-module-b.sh` (`k=3, l=3`) |
+| `MB-03` | [x] | 6% | **Derechos ARCO + NIST SP 800-88:** Cancelación/Supresión con sobrescritura segura (*Clear/Purge*) y limpieza de buffers en memoria | `role/privacidad-ciclo-vida` (Jezreel) | `POST /lifecycle/arco/erasure` ejecuta sobrescritura multi-pasada en PostgreSQL (`CLEAR` 2 pasadas / `PURGE` 3 pasadas), `secure_zero_buffer` en memoria y purga KV v2 en Vault (`CONFIRMED_NOT_FOUND`) |
+| `MB-04` | [x] | 6% | **Certificado de Sanitización:** Emisión automática en JSON y PDF firmado con hash `SHA-256` | `role/privacidad-ciclo-vida` (Jezreel) | Persistido en `compliance.sanitization_certificates`, descargable en `/lifecycle/certificates/{id}.json` y `.pdf` (`reportlab`) con verificación `/verify` en tiempo constante (`hmac.compare_digest`) y detección de tampering |
 
 ---
 
@@ -106,3 +106,4 @@
 | 2026-11-21 | `F5-03`, `F5-04` | Ubaldo | PR #1 | Túnel `cloudflared` (`readyConnections=4`), 4 WAF Custom Rules, Rate Limiting `/auth/`, Zero Trust Access en `siem.` y cabeceras Zero Trust verificados con `PASS=14 / WARN=0 / FAIL=0` (**Avance: 15%**). |
 | 2026-11-21 | `MA-01` (+ bóveda `MA-02`) | Ubaldo | `role/seguridad-infra` | Autenticación Argon2id (salt único + HMAC-SHA256 pepper), FIDO2/WebAuthn Passkeys, sesiones JWT con revocación (`/auth/*`) y bóveda HashiCorp Vault Transit AEAD + KV v2 con tokens `pat_...` (`/vault/*`) verificados con `pytest` (11/11) y E2E Docker `verify-ma01-ma02.sh` (`PASS=14 / FAIL=0`) (**Avance: 20%**). |
 | 2026-11-22 | `MA-02`, `MA-03`, `MA-04` | Jezreel | `role/privacidad-ciclo-vida` | Integración segregada Vault+PostgreSQL (`/clinical/records`, `/clinical/records/segregated`, `/clinical/records/{id}/patient-identity`), cliente OPA fail-closed y política `hospital_abac.rego` (10/10 `opa test` + `opa check --strict`), motor de minimización cuantitativa/cualitativa por rol y verificación `pytest` (17/17), `ruff`, `verify-ma01-ma02.sh` (`PASS=14/FAIL=0`) y `verify-module-a.sh` (`PASS=9/FAIL=0`) (**Avance: 35%**). |
+| 2026-11-22 | `MB-01`, `MB-02`, `MB-03`, `MB-04` | Jezreel | `role/privacidad-ciclo-vida` | Planificador TTL automático (`TTLBackgroundScheduler` + `/lifecycle/ttl/*`), exportador *Safe Harbor* (18 IDs HIPAA, tope `90+`) + $k$-anonimato/$l$-diversidad JSON y CSV (`/lifecycle/exports/*`), borrado ARCO + NIST SP 800-88 (`CLEAR`/`PURGE` multi-pasada, `secure_zero_buffer` en memoria y purga Vault KV v2) y certificados JSON/PDF (`reportlab`) con verificación `SHA-256` (`/lifecycle/certificates/*`); verificado con `opa test` (13/13), `pytest` (21/21), `ruff` y E2E Docker (`verify-ma01-ma02.sh` 14/14, `verify-module-a.sh` 9/9, `verify-module-b.sh` 8/8) (**Avance: 57%**). |

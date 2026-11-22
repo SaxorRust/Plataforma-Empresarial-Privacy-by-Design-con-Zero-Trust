@@ -5,9 +5,14 @@ from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import settings
+from app.lifecycle.ttl_worker import TTLSweepService
 from app.models.auth import AuthenticatedUser, UserRole
 from app.policy.opa_client import OPAClient
 from app.repositories.auth_repo import PostgresUserRepository, UserRepository
+from app.repositories.certificate_repo import (
+    PostgresSanitizationCertificateRepository,
+    SanitizationCertificateRepository,
+)
 from app.repositories.clinical_repo import (
     ClinicalRecordRepository,
     PostgresClinicalRecordRepository,
@@ -66,6 +71,11 @@ def _clinical_repository_singleton() -> PostgresClinicalRecordRepository:
 
 
 @lru_cache(maxsize=1)
+def _certificate_repository_singleton() -> PostgresSanitizationCertificateRepository:
+    return PostgresSanitizationCertificateRepository(dsn=settings.database_url)
+
+
+@lru_cache(maxsize=1)
 def _vault_service_singleton() -> VaultPIIVaultService:
     return VaultPIIVaultService(
         vault_addr=settings.vault_addr,
@@ -83,6 +93,16 @@ def _opa_client_singleton() -> OPAClient:
     return OPAClient(
         opa_url=settings.opa_url,
         timeout_seconds=settings.opa_timeout_seconds,
+    )
+
+
+@lru_cache(maxsize=1)
+def _ttl_sweep_service_singleton() -> TTLSweepService:
+    return TTLSweepService(
+        clinical_repo=_clinical_repository_singleton(),
+        vault_service=_vault_service_singleton(),
+        enabled=settings.ttl_sweep_enabled,
+        interval_seconds=settings.ttl_sweep_interval_seconds,
     )
 
 
@@ -106,12 +126,20 @@ def get_clinical_repository() -> ClinicalRecordRepository:
     return _clinical_repository_singleton()
 
 
+def get_certificate_repository() -> SanitizationCertificateRepository:
+    return _certificate_repository_singleton()
+
+
 def get_vault_service() -> VaultPIIVaultService:
     return _vault_service_singleton()
 
 
 def get_opa_client() -> OPAClient:
     return _opa_client_singleton()
+
+
+def get_ttl_sweep_service() -> TTLSweepService:
+    return _ttl_sweep_service_singleton()
 
 
 def get_declared_purpose(

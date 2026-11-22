@@ -68,7 +68,19 @@ class FakeOPATransport(httpx.BaseTransport):
             or (
                 role == "auditor_arco"
                 and purpose == "ejercicio_arco"
-                and action in {"read_record", "read_single_record", "read_audit", "erase_nist_800_88"}
+                and action
+                in {
+                    "read_record",
+                    "read_single_record",
+                    "read_audit",
+                    "erase_nist_800_88",
+                    "run_ttl_sweep",
+                }
+            )
+            or (
+                role == "admin_sec"
+                and purpose == "mantenimiento_ttl"
+                and action == "run_ttl_sweep"
             )
             or (
                 role == "paciente"

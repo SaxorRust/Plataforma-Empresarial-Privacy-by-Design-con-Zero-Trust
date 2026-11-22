@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     vault_timeout_seconds: float = 5.0
     opa_url: str = "http://opa:8181/v1/data/hospital/authz/decision"
     opa_timeout_seconds: float = 5.0
+    ttl_sweep_enabled: bool = True
+    ttl_sweep_interval_seconds: int = 60
     siem_host: str = "siem-collector"
     siem_port: int = 5514
     argon2_pepper: str = "dev_pepper_change_me"

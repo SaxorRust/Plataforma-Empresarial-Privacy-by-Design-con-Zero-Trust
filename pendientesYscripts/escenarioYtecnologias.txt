@@ -1,0 +1,5 @@
+Escenario: Sistema de gestión hospitalaria.
+Backend y BD: Python (FastAPI) + PostgreSQL.
+Stack de seguridad: Contenedores Docker ligeros (WebAuthn/Argon2id + Bóveda de tokenización/HashiCorp Vault + OPA + Colector Syslog RFC 5424 / SIEM en Python).
+Autenticación: FIDO2/WebAuthn (Passkeys) + respaldo Argon2id (salt único + pepper).
+Entorno de ejecución: Linux nativo con Docker (soporte completo para Seccomp-BPF y AppArmor) y cloudflared.

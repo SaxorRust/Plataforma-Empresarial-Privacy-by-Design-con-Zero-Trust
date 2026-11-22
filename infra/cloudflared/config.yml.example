@@ -1,0 +1,19 @@
+tunnel: <REEMPLAZAR_CON_TUNNEL_UUID>
+credentials-file: /root/.cloudflared/<REEMPLAZAR_CON_TUNNEL_UUID>.json
+
+ingress:
+  # Plataforma principal (FastAPI / Reverse Proxy local)
+  - hostname: tralaleritosmigajeros.uk
+    service: http://localhost:8000
+    originRequest:
+      noTLSVerify: false
+
+  - hostname: app.tralaleritosmigajeros.uk
+    service: http://localhost:8000
+
+  # Opcional: panel SIEM (proteger con Cloudflare Zero Trust Access)
+  - hostname: siem.tralaleritosmigajeros.uk
+    service: http://localhost:8080
+
+  # Regla catch-all obligatoria
+  - service: http_status:404

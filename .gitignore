@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environment & Secrets (NEVER commit secrets to public repo)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+
+# Cloudflare Tunnel credentials
+infra/cloudflared/*.json
+infra/cloudflared/config.yml
+!infra/cloudflared/config.yml.example
+
+# Vault & Database local volumes
+data/
+volumes/
+*.db
+*.sqlite3
+
+# Generated certificates/artifacts during local testing
+artifacts_out/
+*.log

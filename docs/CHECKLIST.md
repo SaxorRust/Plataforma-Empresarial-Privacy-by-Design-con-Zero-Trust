@@ -21,12 +21,12 @@
 | Bloque | Peso Total | Completado | Avance del Bloque |
 | :--- | :---: | :---: | :---: |
 | **Fase 1:** Gobernanza Git, Entorno Base y Planeación | 10% | 10% | `10 / 10` |
-| **Módulo A:** Gobernanza, Identidad, Bóveda y ABAC (20% rúbrica) | 20% | 0% | `0 / 20` |
+| **Módulo A:** Gobernanza, Identidad, Bóveda y ABAC (20% rúbrica) | 20% | 5% | `5 / 20` |
 | **Módulo B:** Ciclo de Vida, Desidentificación y NIST SP 800-88 (25% rúbrica) | 22% | 0% | `0 / 22` |
 | **Módulo C:** Sandboxing, Syslog RFC 5424 y SIEM (25% rúbrica) | 22% | 0% | `0 / 22` |
 | **Fase 5:** Pruebas Automatizadas, GitHub Actions y Cloudflare Tunnel | 12% | 5% | `5 / 12` |
 | **Fase 6:** Documentación (MD/PDF) y Defensa Técnica (30% rúbrica) | 14% | 0% | `0 / 14` |
-| **TOTAL GLOBAL** | **100%** | **15%** | **`15%`** |
+| **TOTAL GLOBAL** | **100%** | **20%** | **`20%`** |
 
 ---
 
@@ -45,8 +45,8 @@
 
 | ID | Estado | Peso | Elemento / Entregable | Rama / Rol | Evidencia / Criterio de Verificación |
 | :--- | :---: | :---: | :--- | :--- | :--- |
-| `MA-01` | [ ] | 5% | **Autenticación robusta:** FIDO2/WebAuthn (Passkeys) + respaldo Argon2id con *Salt* único + *Pepper* | `role/seguridad-infra` (Ubaldo) | Registro y login funcionales; hash verificado en BD |
-| `MA-02` | [ ] | 5% | **Segregación y bóveda (Vault):** Identificadores directos aislados de atributos sensibles | `role/privacidad-ciclo-vida` & `role/seguridad-infra` | Esquema segregado + intercambio solo vía tokens opacos |
+| `MA-01` | [x] | 5% | **Autenticación robusta:** FIDO2/WebAuthn (Passkeys) + respaldo Argon2id con *Salt* único + *Pepper* | `role/seguridad-infra` (Ubaldo) | `/auth/*` operativo (Argon2id `$argon2id$v=19$m=65536,t=3,p=2`, Passkeys ECDSA P-256, JWT+logout); verificado con `pytest` y `verify-ma01-ma02.sh` |
+| `MA-02` | [ ] | 5% | **Segregación y bóveda (Vault):** Identificadores directos aislados de atributos sensibles | `role/privacidad-ciclo-vida` & `role/seguridad-infra` | Bóveda Vault (`Transit AEAD + KV v2 + pat_...`) lista y verificada en `/vault/*`; pendiente vinculación con expedientes clínicos (`role/privacidad-ciclo-vida`) |
 | `MA-03` | [ ] | 5% | **Prevención de Function Creep (OPA/ABAC):** Validación de propósito declarado por consulta | `role/privacidad-ciclo-vida` (Jezreel) | Consultas sin propósito válido devuelven `403 Forbidden` |
 | `MA-04` | [ ] | 5% | **Minimización cuantitativa y cualitativa:** Filtrado de columnas y generalización según rol | `role/privacidad-ciclo-vida` (Jezreel) | Respuestas API filtradas/enmascaradas por rol |
 
@@ -104,3 +104,4 @@
 | 2026-11-21 | Checklist y guía `cloudflared` | Ubaldo | `5b8a884` | `.gitignore`, `docs/CHECKLIST.md`, `infra/cloudflared/`. |
 | 2026-11-21 | `F1-01`, `F1-02`, `F1-03`, `F1-04` | Equipo | `75535bc` | Infraestructura Docker Compose segmentada, esquema SQL, política OPA base, guía Ubuntu 26.04.1 LTS, CI y ramas por rol (**Avance: 10%**). |
 | 2026-11-21 | `F5-03`, `F5-04` | Ubaldo | PR #1 | Túnel `cloudflared` (`readyConnections=4`), 4 WAF Custom Rules, Rate Limiting `/auth/`, Zero Trust Access en `siem.` y cabeceras Zero Trust verificados con `PASS=14 / WARN=0 / FAIL=0` (**Avance: 15%**). |
+| 2026-11-21 | `MA-01` (+ bóveda `MA-02`) | Ubaldo | `role/seguridad-infra` | Autenticación Argon2id (salt único + HMAC-SHA256 pepper), FIDO2/WebAuthn Passkeys, sesiones JWT con revocación (`/auth/*`) y bóveda HashiCorp Vault Transit AEAD + KV v2 con tokens `pat_...` (`/vault/*`) verificados con `pytest` (11/11) y E2E Docker `verify-ma01-ma02.sh` (`PASS=14 / FAIL=0`) (**Avance: 20%**). |

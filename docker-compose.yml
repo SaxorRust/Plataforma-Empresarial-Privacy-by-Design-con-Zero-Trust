@@ -58,9 +58,10 @@ services:
   # 3. Open Policy Agent (Motor ABAC y Prevención de Function Creep)
   # ----------------------------------------------------------------------------
   opa:
-    image: openpolicyagent/opa:0.69.0-rootless
+    image: openpolicyagent/opa:latest-static
     container_name: zt-opa
     restart: unless-stopped
+    user: "65534:65534"
     command:
       - "run"
       - "--server"

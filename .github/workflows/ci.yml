@@ -45,4 +45,7 @@ jobs:
       - name: Validar sintaxis de políticas Rego (OPA)
         run: |
           docker run --rm -v "${{ github.workspace }}/infra/opa/policies:/policies:ro" \
-            openpolicyagent/opa:0.69.0-rootless check /policies
+            openpolicyagent/opa:latest-static check /policies
+
+      - name: Validar sintaxis script de aprovisionamiento Ubuntu
+        run: bash -n infra/scripts/setup-ubuntu-vm.sh

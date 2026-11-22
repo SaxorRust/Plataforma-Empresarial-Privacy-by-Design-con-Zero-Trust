@@ -27,9 +27,10 @@ services:
       - no-new-privileges:true
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zt_app_user} -d ${POSTGRES_DB:-hospital_zt}"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
 
   # ----------------------------------------------------------------------------
   # 2. HashiCorp Vault (Bóveda de Identificadores Directos y Tokenización)
@@ -38,10 +39,14 @@ services:
     image: hashicorp/vault:1.17
     container_name: zt-vault
     restart: unless-stopped
+    command: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200"]
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID:-dev_vault_token_change_me}
       VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
       VAULT_ADDR: http://127.0.0.1:8200
+      # Evita conflicto entre setcap del entrypoint y no-new-privileges:true
+      SKIP_SETCAP: "true"
+      SKIP_CHOWN: "true"
     cap_add:
       - IPC_LOCK
     security_opt:
@@ -50,9 +55,10 @@ services:
       - vault_net
     healthcheck:
       test: ["CMD", "vault", "status"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 5s
 
   # ----------------------------------------------------------------------------
   # 3. Open Policy Agent (Motor ABAC y Prevención de Function Creep)
@@ -79,9 +85,10 @@ services:
       - no-new-privileges:true
     healthcheck:
       test: ["CMD", "/opa", "version"]
-      interval: 15s
+      interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
+      start_period: 5s
 
   # ----------------------------------------------------------------------------
   # 4. Colector SIEM & Syslog RFC 5424 (Módulo C - Integrante 3: Samuel)
@@ -112,9 +119,10 @@ services:
       - no-new-privileges:true
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
-      interval: 15s
+      interval: 5s
       timeout: 5s
-      retries: 3
+      retries: 10
+      start_period: 5s
 
   # ----------------------------------------------------------------------------
   # 5. API Hospitalaria Privacy-by-Design (FastAPI - Módulos A & B)

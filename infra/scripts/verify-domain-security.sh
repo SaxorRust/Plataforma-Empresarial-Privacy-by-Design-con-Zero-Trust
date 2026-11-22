@@ -103,7 +103,7 @@ fi
 
 echo ""
 echo "--- 6. Revisión de exposición del panel SIEM (siem.${DOMAIN}) ---"
-SIEM_HEADERS="$(curl -s -I --max-time 10 "https://siem.${DOMAIN}/health" || true)"
+SIEM_HEADERS="$(curl -s -D - -o /dev/null --max-time 10 "https://siem.${DOMAIN}/health" || true)"
 SIEM_CODE="$(echo "${SIEM_HEADERS}" | awk 'NR==1{print $2}')"
 SIEM_LOC="$(echo "${SIEM_HEADERS}" | grep -i '^location:' | tr -d '\r' || true)"
 if [[ "${SIEM_CODE}" == "302" ]] && echo "${SIEM_LOC}" | grep -qi "cloudflareaccess.com"; then

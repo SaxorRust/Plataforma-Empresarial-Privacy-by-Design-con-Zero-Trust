@@ -103,13 +103,17 @@ fi
 
 echo ""
 echo "--- 6. Revisión de exposición del panel SIEM (siem.${DOMAIN}) ---"
-SIEM_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://siem.${DOMAIN}/health" || echo "000")"
-if [[ "${SIEM_CODE}" == "302" || "${SIEM_CODE}" == "403" || "${SIEM_CODE}" == "401" ]]; then
-  ok "siem.${DOMAIN} está protegido ante acceso anónimo (HTTP ${SIEM_CODE} - Cloudflare Access/Zero Trust)"
+SIEM_HEADERS="$(curl -s -I --max-time 10 "https://siem.${DOMAIN}/health" || true)"
+SIEM_CODE="$(echo "${SIEM_HEADERS}" | awk 'NR==1{print $2}')"
+SIEM_LOC="$(echo "${SIEM_HEADERS}" | grep -i '^location:' | tr -d '\r' || true)"
+if [[ "${SIEM_CODE}" == "302" ]] && echo "${SIEM_LOC}" | grep -qi "cloudflareaccess.com"; then
+  ok "siem.${DOMAIN} protegido con Cloudflare Zero Trust Access (302 -> ${SIEM_LOC})"
+elif [[ "${SIEM_CODE}" == "403" || "${SIEM_CODE}" == "401" ]]; then
+  ok "siem.${DOMAIN} bloquea acceso anónimo (HTTP ${SIEM_CODE})"
 elif [[ "${SIEM_CODE}" == "200" ]]; then
   warn "siem.${DOMAIN}/health responde HTTP 200 públicamente. Configura Cloudflare Zero Trust Access (Email OTP) para restringirlo al equipo."
 else
-  warn "siem.${DOMAIN} devolvió HTTP ${SIEM_CODE} (verifica DNS/túnel si ya lo activaste)."
+  warn "siem.${DOMAIN} devolvió HTTP ${SIEM_CODE:-000} (verifica DNS/túnel si ya lo activaste)."
 fi
 
 echo ""

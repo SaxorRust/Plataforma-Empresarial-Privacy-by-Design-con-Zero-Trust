@@ -102,9 +102,10 @@ En **Security → WAF → Rate limiting rules → Create rule**:
 ## 5. Bots y Nivel de Seguridad
 
 En **Security → Bots** y **Security → Settings**:
-- **Bot Fight Mode:** `ON`
+- **Under Attack Mode:** `OFF`
 - **Security Level:** `Medium`
 - **Browser Integrity Check:** `ON`
+- **Bot Fight Mode:** **`OFF`** *(Importante para APIs REST en plan Free: Bot Fight Mode intercepta clientes HTTP legítimos como `curl`, pruebas automatizadas o integraciones API con un reto JavaScript `403 / Just a moment...`, y en el plan Free no admite reglas de excepción WAF Skip. En su lugar, la mitigación de abuso se cubre con nuestras 4 WAF Custom Rules, la regla de Rate Limiting en `/auth/` y las reglas de correlación del SIEM).*
 
 ---
 

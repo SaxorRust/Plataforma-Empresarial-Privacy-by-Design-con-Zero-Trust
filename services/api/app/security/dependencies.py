@@ -4,6 +4,7 @@ from functools import lru_cache
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.audit.syslog_client import SyslogAuditClient
 from app.config import settings
 from app.lifecycle.ttl_worker import TTLSweepService
 from app.models.auth import AuthenticatedUser, UserRole
@@ -138,8 +139,23 @@ def get_opa_client() -> OPAClient:
     return _opa_client_singleton()
 
 
+@lru_cache(maxsize=1)
+def _audit_client_singleton() -> SyslogAuditClient:
+    return SyslogAuditClient(
+        host=settings.siem_host,
+        port=settings.siem_port,
+        protocol=settings.siem_protocol,
+        enabled=settings.siem_enabled,
+        app_name="hospital-privacy-api",
+    )
+
+
 def get_ttl_sweep_service() -> TTLSweepService:
     return _ttl_sweep_service_singleton()
+
+
+def get_audit_client() -> SyslogAuditClient:
+    return _audit_client_singleton()
 
 
 def get_declared_purpose(

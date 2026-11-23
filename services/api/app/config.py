@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     ttl_sweep_interval_seconds: int = 60
     siem_host: str = "siem-collector"
     siem_port: int = 5514
+    siem_enabled: bool = True
+    siem_protocol: str = "udp"
     argon2_pepper: str = "dev_pepper_change_me"
     argon2_time_cost: int = 3
     argon2_memory_cost: int = 65536

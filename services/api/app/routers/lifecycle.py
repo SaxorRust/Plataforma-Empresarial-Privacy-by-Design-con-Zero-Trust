@@ -1,8 +1,13 @@
 import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
+from app.audit.syslog_client import (
+    SYSLOG_SEVERITY_NOTICE,
+    SYSLOG_SEVERITY_WARNING,
+    SyslogAuditClient,
+)
 from app.lifecycle.anonymization import (
     AnonymizationNotSatisfiableError,
     build_anonymized_export,
@@ -37,6 +42,7 @@ from app.repositories.auth_repo import DatabaseUnavailableError
 from app.repositories.certificate_repo import SanitizationCertificateRepository
 from app.repositories.clinical_repo import ClinicalRecordRepository
 from app.security.dependencies import (
+    get_audit_client,
     get_certificate_repository,
     get_clinical_repository,
     get_current_user,
@@ -79,6 +85,8 @@ def _authorize_with_opa(
     actor: AuthenticatedUser,
     purpose: str,
     action: str,
+    audit_client: SyslogAuditClient | None = None,
+    request: Request | None = None,
 ) -> None:
     try:
         decision = opa_client.evaluate(
@@ -90,6 +98,18 @@ def _authorize_with_opa(
         raise _handle_opa_error(exc) from exc
 
     if not decision.allow:
+        if audit_client is not None:
+            audit_client.emit_event(
+                msg_id="OPA_POLICY_DENIED",
+                message=f"Denegación ABAC/OPA en ciclo de vida ({action}): {decision.reason}",
+                severity=SYSLOG_SEVERITY_WARNING,
+                actor=actor.username,
+                role=actor.role,
+                action=action,
+                outcome="denied",
+                purpose=purpose or "none",
+                request=request,
+            )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=decision.reason,
@@ -117,19 +137,42 @@ def get_ttl_status(
     summary="Ejecutar barrido inmediato de registros y tokens con TTL expirado (MB-01)",
 )
 def trigger_ttl_sweep(
+    request: Request,
     actor: AuthenticatedUser = Depends(get_current_user),
     purpose: str = Depends(get_declared_purpose),
     opa_client: OPAClient = Depends(get_opa_client),
     ttl_service: TTLSweepService = Depends(get_ttl_sweep_service),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> TTLSweepResponse:
-    _authorize_with_opa(opa_client, actor=actor, purpose=purpose, action="run_ttl_sweep")
+    _authorize_with_opa(
+        opa_client,
+        actor=actor,
+        purpose=purpose,
+        action="run_ttl_sweep",
+        audit_client=audit_client,
+        request=request,
+    )
     try:
-        return ttl_service.run_sweep(triggered_by=f"{actor.role}:{actor.username}")
+        result = ttl_service.run_sweep(triggered_by=f"{actor.role}:{actor.username}")
     except DatabaseUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+
+    audit_client.emit_event(
+        msg_id="LIFECYCLE_TTL_SWEEP",
+        message=f"Barrido TTL completado (registros_purgados={result.purged_records_count})",
+        severity=SYSLOG_SEVERITY_NOTICE,
+        actor=actor.username,
+        role=actor.role,
+        action="run_ttl_sweep",
+        outcome="success",
+        purpose=purpose,
+        records_count=result.purged_records_count,
+        request=request,
+    )
+    return result
 
 
 # ==============================================================================
@@ -142,12 +185,21 @@ def trigger_ttl_sweep(
 )
 def export_anonymized_json(
     payload: AnonymizedExportRequest,
+    request: Request,
     actor: AuthenticatedUser = Depends(get_current_user),
     purpose: str = Depends(get_declared_purpose),
     opa_client: OPAClient = Depends(get_opa_client),
     clinical_repo: ClinicalRecordRepository = Depends(get_clinical_repository),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> AnonymizedExportResponse:
-    _authorize_with_opa(opa_client, actor=actor, purpose=purpose, action="export_anonymized")
+    _authorize_with_opa(
+        opa_client,
+        actor=actor,
+        purpose=purpose,
+        action="export_anonymized",
+        audit_client=audit_client,
+        request=request,
+    )
     try:
         records = clinical_repo.list_records(
             department=payload.department,
@@ -160,7 +212,7 @@ def export_anonymized_json(
         ) from exc
 
     try:
-        return build_anonymized_export(
+        result = build_anonymized_export(
             records,
             k=payload.k,
             l_diversity=payload.l_diversity,
@@ -173,12 +225,29 @@ def export_anonymized_json(
             detail=str(exc),
         ) from exc
 
+    audit_client.emit_event(
+        msg_id="LIFECYCLE_EXPORT",
+        message=(
+            f"Exportación Safe Harbor + (k={result.metrics.achieved_k},"
+            f"l={result.metrics.achieved_l}) en JSON"
+        ),
+        actor=actor.username,
+        role=actor.role,
+        action="export_anonymized",
+        outcome="success",
+        purpose=purpose,
+        records_count=result.metrics.exported_records_count,
+        request=request,
+    )
+    return result
+
 
 @router.get(
     "/exports/anonymized.csv",
     summary="Descargar dataset estadístico desidentificado (Safe Harbor + k,l) en CSV (MB-02)",
 )
 def export_anonymized_csv(
+    request: Request,
     k: int = Query(default=2, ge=2, le=50),
     l_diversity: int = Query(default=2, ge=1, le=20, alias="l"),
     suppression_limit: float = Query(default=0.25, ge=0.0, le=0.5),
@@ -187,8 +256,16 @@ def export_anonymized_csv(
     purpose: str = Depends(get_declared_purpose),
     opa_client: OPAClient = Depends(get_opa_client),
     clinical_repo: ClinicalRecordRepository = Depends(get_clinical_repository),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> Response:
-    _authorize_with_opa(opa_client, actor=actor, purpose=purpose, action="export_anonymized")
+    _authorize_with_opa(
+        opa_client,
+        actor=actor,
+        purpose=purpose,
+        action="export_anonymized",
+        audit_client=audit_client,
+        request=request,
+    )
     try:
         records = clinical_repo.list_records(
             department=department,
@@ -215,6 +292,20 @@ def export_anonymized_csv(
         ) from exc
 
     csv_body = render_anonymized_csv(export_result)
+    audit_client.emit_event(
+        msg_id="LIFECYCLE_EXPORT",
+        message=(
+            f"Exportación Safe Harbor + (k={export_result.metrics.achieved_k},"
+            f"l={export_result.metrics.achieved_l}) en CSV"
+        ),
+        actor=actor.username,
+        role=actor.role,
+        action="export_anonymized",
+        outcome="success",
+        purpose=purpose,
+        records_count=export_result.metrics.exported_records_count,
+        request=request,
+    )
     return Response(
         content=csv_body,
         media_type="text/csv; charset=utf-8",
@@ -238,14 +329,23 @@ def export_anonymized_csv(
 )
 def execute_arco_erasure(
     payload: ARCOErasureRequest,
+    request: Request,
     actor: AuthenticatedUser = Depends(get_current_user),
     purpose: str = Depends(get_declared_purpose),
     opa_client: OPAClient = Depends(get_opa_client),
     clinical_repo: ClinicalRecordRepository = Depends(get_clinical_repository),
     vault_service: VaultPIIVaultService = Depends(get_vault_service),
     certificate_repo: SanitizationCertificateRepository = Depends(get_certificate_repository),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> ARCOErasureResponse:
-    _authorize_with_opa(opa_client, actor=actor, purpose=purpose, action="erase_nist_800_88")
+    _authorize_with_opa(
+        opa_client,
+        actor=actor,
+        purpose=purpose,
+        action="erase_nist_800_88",
+        audit_client=audit_client,
+        request=request,
+    )
 
     service = NISTSanitizationService(
         clinical_repo=clinical_repo,
@@ -253,7 +353,7 @@ def execute_arco_erasure(
         certificate_repo=certificate_repo,
     )
     try:
-        return service.execute_arco_erasure(payload, actor=actor)
+        result = service.execute_arco_erasure(payload, actor=actor)
     except ARCOErasureNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ARCOAlreadySanitizedError as exc:
@@ -265,6 +365,21 @@ def execute_arco_erasure(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+
+    audit_client.emit_event(
+        msg_id="LIFECYCLE_ARCO_ERASURE",
+        message=f"Borrado certificado {payload.method} completado (cert={result.certificate_id})",
+        severity=SYSLOG_SEVERITY_NOTICE,
+        actor=actor.username,
+        role=actor.role,
+        action="erase_nist_800_88",
+        outcome="success",
+        purpose=purpose,
+        resource=str(result.certificate_id),
+        records_count=result.records_sanitized_count,
+        request=request,
+    )
+    return result
 
 
 @router.get(

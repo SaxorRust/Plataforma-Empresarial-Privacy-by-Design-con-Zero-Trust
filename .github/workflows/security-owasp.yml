@@ -4,7 +4,7 @@ on:
   push:
     branches: ["main", "role/**"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "role/**"]
   schedule:
     # Auditoría semanal automática para detectar nuevos CVEs en dependencias (OWASP A06)
     - cron: "0 6 * * 1"

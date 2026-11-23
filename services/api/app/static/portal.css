@@ -925,6 +925,38 @@ tr:hover td {
   color: hsl(38, 95%, 80%);
 }
 
+.btn-row-stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.btn-row-flush {
+  margin-top: 0;
+}
+
+.mt-14 {
+  margin-top: 14px;
+}
+
+.mb-12 {
+  margin-bottom: 12px;
+}
+
+.input-compact {
+  width: 190px;
+}
+
+.inline-check-label {
+  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inline-check-label-sm {
+  font-size: 0.78rem;
+}
+
 @media (max-width: 980px) {
   .workspace-shell {
     grid-template-columns: 1fr;

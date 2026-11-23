@@ -42,7 +42,11 @@ def test_api_portal_ui_and_static_assets():
     assert 'id="btn-generate-password"' in portal_resp.text
     assert 'id="btn-copy-reg-password"' in portal_resp.text
     assert "script-src 'self'" in portal_resp.headers["content-security-policy"]
+    assert "style-src 'self'" in portal_resp.headers["content-security-policy"]
     assert "unsafe-inline" not in portal_resp.headers["content-security-policy"]
+    assert 'style="' not in portal_resp.text
+    assert "<style" not in portal_resp.text
+    assert "<script>" not in portal_resp.text
 
     # 2. Content negotiation en `/` para navegadores (`Accept: text/html`) vs API (`application/json`)
     browser_root = client.get("/", headers={"Accept": "text/html,application/xhtml+xml"})

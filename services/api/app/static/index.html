@@ -69,7 +69,7 @@
             </button>
           </div>
         </div>
-        <div class="btn-row" style="flex-direction: column; align-items: stretch;">
+        <div class="btn-row btn-row-stack">
           <button type="submit" class="btn btn-primary" id="btn-login-submit">
             Ingresar con Argon2id
           </button>
@@ -149,7 +149,7 @@
           </div>
           <span class="field-hint">Requiere al menos 12 caracteres, mayúscula, minúscula, dígito y símbolo.</span>
         </div>
-        <div class="btn-row" style="flex-direction: column; align-items: stretch;">
+        <div class="btn-row btn-row-stack">
           <button type="submit" class="btn btn-primary" id="btn-register-submit">
             Crear Cuenta y Autenticar
           </button>
@@ -455,7 +455,7 @@
                 </button>
               </div>
 
-              <div class="field-group" style="margin-top: 14px;">
+              <div class="field-group mt-14">
                 <label>Resultado de Bóveda / Resolución de Identidad</label>
                 <pre class="code-output" id="vault-inspector-output">Selecciona "Resolver PII" en cualquier expediente o consulta el estado de la bóveda.</pre>
               </div>
@@ -467,8 +467,8 @@
             <div class="panel-card-header">
               <h3>Expedientes Clínicos Proyectados por Política de Minimización (MA-04)</h3>
               <div class="btn-row">
-                <input type="text" id="filter-dept" placeholder="Filtrar departamento..." style="width: 190px;" />
-                <label style="font-size: 0.78rem; display: inline-flex; align-items: center; gap: 6px;">
+                <input type="text" id="filter-dept" class="input-compact" placeholder="Filtrar departamento..." />
+                <label class="inline-check-label inline-check-label-sm">
                   <input type="checkbox" id="filter-include-sanitized" />
                   Incluir sanitizados (solo auditor_arco)
                 </label>
@@ -566,11 +566,11 @@
                 </div>
 
                 <div class="btn-row">
-                  <label style="font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px;">
+                  <label class="inline-check-label">
                     <input type="checkbox" id="opa-sim-sanitized" />
                     Registro ya sanitizado (NIST SP 800-88)
                   </label>
-                  <label style="font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px;">
+                  <label class="inline-check-label">
                     <input type="checkbox" id="opa-sim-owner" />
                     Titular coincide (resource_owner_match)
                   </label>
@@ -590,7 +590,7 @@
                 <span class="badge badge-ok" id="opa-decision-badge">LISTO</span>
               </div>
               <p class="panel-desc">Escenarios preconfigurados de auditoría contra Function Creep:</p>
-              <div class="btn-row" style="margin-bottom: 12px;">
+              <div class="btn-row mb-12">
                 <button type="button" class="btn btn-secondary btn-sm" id="preset-opa-medico">Médico Válido</button>
                 <button type="button" class="btn btn-secondary btn-sm" id="preset-opa-creep">Médico con Marketing (403)</button>
                 <button type="button" class="btn btn-secondary btn-sm" id="preset-opa-singling">Analista Singularización (403)</button>

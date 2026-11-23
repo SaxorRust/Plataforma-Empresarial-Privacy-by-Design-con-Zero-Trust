@@ -798,8 +798,7 @@
 
       const tdAct = document.createElement("td");
       const btnWrap = document.createElement("div");
-      btnWrap.className = "btn-row";
-      btnWrap.style.marginTop = "0";
+      btnWrap.className = "btn-row btn-row-flush";
 
       if (rec.record_id && state.user && state.user.role === "medico") {
         const btnPii = document.createElement("button");
@@ -1119,8 +1118,7 @@
 
       const tdAct = document.createElement("td");
       const rowBtns = document.createElement("div");
-      rowBtns.className = "btn-row";
-      rowBtns.style.marginTop = "0";
+      rowBtns.className = "btn-row btn-row-flush";
 
       const btnVerify = document.createElement("button");
       btnVerify.type = "button";

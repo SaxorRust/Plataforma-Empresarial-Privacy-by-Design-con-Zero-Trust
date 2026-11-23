@@ -1,7 +1,12 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from app.audit.syslog_client import (
+    SYSLOG_SEVERITY_NOTICE,
+    SYSLOG_SEVERITY_WARNING,
+    SyslogAuditClient,
+)
 from app.models.auth import AuthenticatedUser
 from app.models.clinical import (
     MedicalRecordCreateRequest,
@@ -21,6 +26,7 @@ from app.policy.opa_client import OPAClient, OPAServiceError, OPAUnavailableErro
 from app.repositories.auth_repo import DatabaseUnavailableError
 from app.repositories.clinical_repo import ClinicalRecordRepository
 from app.security.dependencies import (
+    get_audit_client,
     get_clinical_repository,
     get_current_user,
     get_declared_purpose,
@@ -64,6 +70,8 @@ def _authorize_with_opa(
     resource_purpose: str | None = None,
     is_sanitized: bool = False,
     resource_owner_match: bool = False,
+    audit_client: SyslogAuditClient | None = None,
+    request: Request | None = None,
 ) -> OPADecision:
     try:
         decision = opa_client.evaluate(
@@ -78,6 +86,18 @@ def _authorize_with_opa(
         raise _handle_opa_error(exc) from exc
 
     if not decision.allow:
+        if audit_client is not None:
+            audit_client.emit_event(
+                msg_id="OPA_POLICY_DENIED",
+                message=f"Denegación ABAC/OPA en acción {action}: {decision.reason}",
+                severity=SYSLOG_SEVERITY_WARNING,
+                actor=actor.username,
+                role=actor.role,
+                action=action,
+                outcome="denied",
+                purpose=purpose or "none",
+                request=request,
+            )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=decision.reason,
@@ -111,11 +131,13 @@ def _build_policy_metadata(
 )
 def create_segregated_patient_record(
     payload: SegregatedPatientRecordCreateRequest,
+    request: Request,
     actor: AuthenticatedUser = Depends(get_current_user),
     purpose: str = Depends(get_declared_purpose),
     opa_client: OPAClient = Depends(get_opa_client),
     vault_service: VaultPIIVaultService = Depends(get_vault_service),
     clinical_repo: ClinicalRecordRepository = Depends(get_clinical_repository),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> SegregatedCreateResponse:
     decision = _authorize_with_opa(
         opa_client,
@@ -123,6 +145,8 @@ def create_segregated_patient_record(
         purpose=purpose,
         action="create_record",
         resource_purpose=payload.clinical_data.purpose_scope,
+        audit_client=audit_client,
+        request=request,
     )
 
     try:
@@ -154,6 +178,18 @@ def create_segregated_patient_record(
             detail=str(exc),
         ) from exc
 
+    audit_client.emit_event(
+        msg_id="CLINICAL_RECORD_CREATE",
+        message="Alta segregada de expediente clínico (PII aislada en Vault)",
+        actor=actor.username,
+        role=actor.role,
+        action="create_record",
+        outcome="success",
+        purpose=purpose,
+        resource=str(record.record_id),
+        records_count=1,
+        request=request,
+    )
     return SegregatedCreateResponse(
         opaque_patient_token=tokenized.opaque_patient_token,
         vault_engine=tokenized.vault_engine,
@@ -177,11 +213,13 @@ def create_segregated_patient_record(
 )
 def create_clinical_record(
     payload: MedicalRecordCreateRequest,
+    request: Request,
     actor: AuthenticatedUser = Depends(get_current_user),
     purpose: str = Depends(get_declared_purpose),
     opa_client: OPAClient = Depends(get_opa_client),
     vault_service: VaultPIIVaultService = Depends(get_vault_service),
     clinical_repo: ClinicalRecordRepository = Depends(get_clinical_repository),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> MinimizedRecordResponse:
     decision = _authorize_with_opa(
         opa_client,
@@ -189,6 +227,8 @@ def create_clinical_record(
         purpose=purpose,
         action="create_record",
         resource_purpose=payload.purpose_scope,
+        audit_client=audit_client,
+        request=request,
     )
 
     try:
@@ -223,6 +263,18 @@ def create_clinical_record(
             detail=str(exc),
         ) from exc
 
+    audit_client.emit_event(
+        msg_id="CLINICAL_RECORD_CREATE",
+        message="Creación de expediente clínico vinculado a token opaco",
+        actor=actor.username,
+        role=actor.role,
+        action="create_record",
+        outcome="success",
+        purpose=purpose,
+        resource=str(record.record_id),
+        records_count=1,
+        request=request,
+    )
     return MinimizedRecordResponse(
         record=apply_minimization(record, decision),
         policy=_build_policy_metadata(
@@ -240,6 +292,7 @@ def create_clinical_record(
     summary="Consultar expedientes clínicos con validación ABAC/OPA (MA-03) y minimización por rol (MA-04)",
 )
 def list_clinical_records(
+    request: Request,
     department: str | None = Query(default=None, min_length=2, max_length=64),
     opaque_patient_token: str | None = Query(default=None),
     include_sanitized: bool = Query(default=False),
@@ -247,16 +300,30 @@ def list_clinical_records(
     purpose: str = Depends(get_declared_purpose),
     opa_client: OPAClient = Depends(get_opa_client),
     clinical_repo: ClinicalRecordRepository = Depends(get_clinical_repository),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> MinimizedRecordListResponse:
     decision = _authorize_with_opa(
         opa_client,
         actor=actor,
         purpose=purpose,
         action="read_record",
+        audit_client=audit_client,
+        request=request,
     )
 
     if opaque_patient_token is not None:
         if actor.role == "analista":
+            audit_client.emit_event(
+                msg_id="OPA_POLICY_DENIED",
+                message="Intento de singularización por token bloqueado para rol analista",
+                severity=SYSLOG_SEVERITY_WARNING,
+                actor=actor.username,
+                role=actor.role,
+                action="read_record",
+                outcome="denied",
+                purpose=purpose,
+                request=request,
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
@@ -304,6 +371,18 @@ def list_clinical_records(
         if rec_decision.allow:
             minimized_records.append(apply_minimization(rec, rec_decision))
 
+    audit_client.emit_event(
+        msg_id="CLINICAL_RECORD_LIST",
+        message=f"Consulta de listado de expedientes clínicos (registros={len(minimized_records)})",
+        actor=actor.username,
+        role=actor.role,
+        action="read_record",
+        outcome="success",
+        purpose=purpose,
+        resource=department or "all_departments",
+        records_count=len(minimized_records),
+        request=request,
+    )
     return MinimizedRecordListResponse(
         count=len(minimized_records),
         records=minimized_records,
@@ -323,10 +402,12 @@ def list_clinical_records(
 )
 def get_clinical_record(
     record_id: UUID,
+    request: Request,
     actor: AuthenticatedUser = Depends(get_current_user),
     purpose: str = Depends(get_declared_purpose),
     opa_client: OPAClient = Depends(get_opa_client),
     clinical_repo: ClinicalRecordRepository = Depends(get_clinical_repository),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> MinimizedRecordResponse:
     # Verificación previa por acción: bloquea `analista` y propósitos inválidos antes de tocar BD
     _authorize_with_opa(
@@ -334,6 +415,8 @@ def get_clinical_record(
         actor=actor,
         purpose=purpose,
         action="read_single_record",
+        audit_client=audit_client,
+        request=request,
     )
 
     try:
@@ -358,8 +441,22 @@ def get_clinical_record(
         action="read_single_record",
         resource_purpose=record.purpose_scope,
         is_sanitized=record.is_sanitized,
+        audit_client=audit_client,
+        request=request,
     )
 
+    audit_client.emit_event(
+        msg_id="CLINICAL_RECORD_READ",
+        message="Consulta individual de expediente clínico",
+        actor=actor.username,
+        role=actor.role,
+        action="read_single_record",
+        outcome="success",
+        purpose=purpose,
+        resource=str(record_id),
+        records_count=1,
+        request=request,
+    )
     return MinimizedRecordResponse(
         record=apply_minimization(record, decision),
         policy=_build_policy_metadata(
@@ -379,16 +476,20 @@ def get_clinical_record(
 def update_clinical_record(
     record_id: UUID,
     payload: MedicalRecordUpdateRequest,
+    request: Request,
     actor: AuthenticatedUser = Depends(get_current_user),
     purpose: str = Depends(get_declared_purpose),
     opa_client: OPAClient = Depends(get_opa_client),
     clinical_repo: ClinicalRecordRepository = Depends(get_clinical_repository),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> MinimizedRecordResponse:
     _authorize_with_opa(
         opa_client,
         actor=actor,
         purpose=purpose,
         action="update_record",
+        audit_client=audit_client,
+        request=request,
     )
 
     try:
@@ -417,6 +518,8 @@ def update_clinical_record(
         action="update_record",
         resource_purpose=existing.purpose_scope,
         is_sanitized=existing.is_sanitized,
+        audit_client=audit_client,
+        request=request,
     )
 
     try:
@@ -438,6 +541,18 @@ def update_clinical_record(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Expediente clínico no encontrado.",
         )
+    audit_client.emit_event(
+        msg_id="CLINICAL_RECORD_UPDATE",
+        message="Actualización de expediente clínico",
+        actor=actor.username,
+        role=actor.role,
+        action="update_record",
+        outcome="success",
+        purpose=purpose,
+        resource=str(record_id),
+        records_count=1,
+        request=request,
+    )
     return MinimizedRecordResponse(
         record=apply_minimization(updated, decision),
         policy=_build_policy_metadata(
@@ -456,17 +571,21 @@ def update_clinical_record(
 )
 def resolve_record_patient_identity(
     record_id: UUID,
+    request: Request,
     actor: AuthenticatedUser = Depends(get_current_user),
     purpose: str = Depends(get_declared_purpose),
     opa_client: OPAClient = Depends(get_opa_client),
     vault_service: VaultPIIVaultService = Depends(get_vault_service),
     clinical_repo: ClinicalRecordRepository = Depends(get_clinical_repository),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> DetokenizePatientResponse:
     _authorize_with_opa(
         opa_client,
         actor=actor,
         purpose=purpose,
         action="detokenize_pii",
+        audit_client=audit_client,
+        request=request,
     )
 
     try:
@@ -490,12 +609,29 @@ def resolve_record_patient_identity(
         action="detokenize_pii",
         resource_purpose=record.purpose_scope,
         is_sanitized=record.is_sanitized,
+        audit_client=audit_client,
+        request=request,
     )
 
     try:
-        return vault_service.detokenize_patient(record.opaque_patient_token)
+        identity = vault_service.detokenize_patient(record.opaque_patient_token)
     except VaultServiceError as exc:
         raise _handle_vault_error(exc) from exc
+
+    audit_client.emit_event(
+        msg_id="CLINICAL_PII_DETOKENIZE",
+        message="Resolución de identidad PII en Vault desde expediente clínico",
+        severity=SYSLOG_SEVERITY_NOTICE,
+        actor=actor.username,
+        role=actor.role,
+        action="detokenize_pii",
+        outcome="success",
+        purpose=purpose,
+        resource=str(record_id),
+        records_count=1,
+        request=request,
+    )
+    return identity
 
 
 @router.get(

@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from app.audit.syslog_client import SYSLOG_SEVERITY_NOTICE, SyslogAuditClient
 from app.models.auth import AuthenticatedUser
 from app.models.vault import (
     DetokenizePatientResponse,
@@ -9,7 +10,7 @@ from app.models.vault import (
     VaultRotateKeyResponse,
     VaultStatusResponse,
 )
-from app.security.dependencies import get_vault_service, require_roles
+from app.security.dependencies import get_audit_client, get_vault_service, require_roles
 from app.vault.service import (
     InvalidOpaqueTokenError,
     VaultPIIVaultService,
@@ -39,13 +40,27 @@ def _handle_vault_error(exc: VaultServiceError) -> HTTPException:
 )
 def tokenize_patient_pii(
     payload: PatientPIIRequest,
-    _actor: AuthenticatedUser = Depends(require_roles("medico", "enfermeria", "admin_sec")),
+    request: Request,
+    actor: AuthenticatedUser = Depends(require_roles("medico", "enfermeria", "admin_sec")),
     vault_service: VaultPIIVaultService = Depends(get_vault_service),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> TokenizePatientResponse:
     try:
-        return vault_service.tokenize_patient(payload)
+        result = vault_service.tokenize_patient(payload)
     except VaultServiceError as exc:
         raise _handle_vault_error(exc) from exc
+
+    audit_client.emit_event(
+        msg_id="VAULT_TOKENIZE",
+        message="Identificadores directos tokenizados en bóveda HashiCorp Vault",
+        actor=actor.username,
+        role=actor.role,
+        action="vault_tokenize",
+        outcome="success",
+        resource=result.opaque_patient_token,
+        request=request,
+    )
+    return result
 
 
 @router.get(
@@ -55,13 +70,29 @@ def tokenize_patient_pii(
 )
 def detokenize_patient_pii(
     opaque_patient_token: str,
-    _actor: AuthenticatedUser = Depends(require_roles("medico", "admin_sec")),
+    request: Request,
+    actor: AuthenticatedUser = Depends(require_roles("medico", "admin_sec")),
     vault_service: VaultPIIVaultService = Depends(get_vault_service),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> DetokenizePatientResponse:
     try:
-        return vault_service.detokenize_patient(opaque_patient_token)
+        result = vault_service.detokenize_patient(opaque_patient_token)
     except VaultServiceError as exc:
         raise _handle_vault_error(exc) from exc
+
+    audit_client.emit_event(
+        msg_id="VAULT_DETOKENIZE",
+        message="Detokenización autorizada de PII en bóveda Vault",
+        severity=SYSLOG_SEVERITY_NOTICE,
+        actor=actor.username,
+        role=actor.role,
+        action="vault_detokenize",
+        outcome="success",
+        resource=opaque_patient_token,
+        records_count=1,
+        request=request,
+    )
+    return result
 
 
 @router.delete(
@@ -71,13 +102,28 @@ def detokenize_patient_pii(
 )
 def purge_patient_pii(
     opaque_patient_token: str,
-    _actor: AuthenticatedUser = Depends(require_roles("auditor_arco", "admin_sec")),
+    request: Request,
+    actor: AuthenticatedUser = Depends(require_roles("auditor_arco", "admin_sec")),
     vault_service: VaultPIIVaultService = Depends(get_vault_service),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> PurgePatientResponse:
     try:
-        return vault_service.purge_patient(opaque_patient_token)
+        result = vault_service.purge_patient(opaque_patient_token)
     except VaultServiceError as exc:
         raise _handle_vault_error(exc) from exc
+
+    audit_client.emit_event(
+        msg_id="VAULT_PURGE",
+        message="Purga permanente de token en bóveda Vault KV v2",
+        severity=SYSLOG_SEVERITY_NOTICE,
+        actor=actor.username,
+        role=actor.role,
+        action="vault_purge",
+        outcome="success",
+        resource=opaque_patient_token,
+        request=request,
+    )
+    return result
 
 
 @router.get(
@@ -101,10 +147,25 @@ def vault_status(
     summary="Rotar versión activa de la llave Transit AEAD en HashiCorp Vault",
 )
 def rotate_vault_transit_key(
-    _actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
+    request: Request,
+    actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
     vault_service: VaultPIIVaultService = Depends(get_vault_service),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> VaultRotateKeyResponse:
     try:
-        return vault_service.rotate_transit_key()
+        result = vault_service.rotate_transit_key()
     except VaultServiceError as exc:
         raise _handle_vault_error(exc) from exc
+
+    audit_client.emit_event(
+        msg_id="VAULT_KEY_ROTATE",
+        message="Rotación de llave Transit AEAD en HashiCorp Vault",
+        severity=SYSLOG_SEVERITY_NOTICE,
+        actor=actor.username,
+        role=actor.role,
+        action="vault_rotate_key",
+        outcome="success",
+        resource=result.transit_key,
+        request=request,
+    )
+    return result

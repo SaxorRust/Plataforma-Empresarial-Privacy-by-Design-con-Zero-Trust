@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
+from app.audit.syslog_client import SYSLOG_SEVERITY_WARNING, SyslogAuditClient
 from app.models.auth import (
     AuthenticatedUser,
     CurrentUserResponse,
@@ -23,6 +24,7 @@ from app.repositories.auth_repo import (
     UserRepository,
 )
 from app.security.dependencies import (
+    get_audit_client,
     get_current_user,
     get_jwt_service,
     get_password_service,
@@ -55,8 +57,10 @@ def _to_public_user(user: UserRecord) -> UserPublicResponse:
 )
 def register_user(
     payload: UserRegisterRequest,
+    request: Request,
     repo: UserRepository = Depends(get_user_repository),
     password_service: Argon2idPasswordService = Depends(get_password_service),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> UserPublicResponse:
     password_hash = password_service.hash_password(payload.password)
     try:
@@ -72,6 +76,15 @@ def register_user(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
 
+    audit_client.emit_event(
+        msg_id="AUTH_REGISTER",
+        message="Alta de usuario con respaldo criptográfico Argon2id",
+        actor=user.username,
+        role=user.role,
+        action="register",
+        outcome="success",
+        request=request,
+    )
     return _to_public_user(user)
 
 
@@ -82,9 +95,11 @@ def register_user(
 )
 def login_with_password(
     payload: PasswordLoginRequest,
+    request: Request,
     repo: UserRepository = Depends(get_user_repository),
     password_service: Argon2idPasswordService = Depends(get_password_service),
     jwt_service: JWTService = Depends(get_jwt_service),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> TokenResponse:
     try:
         user = repo.get_user_by_username(payload.username)
@@ -96,6 +111,15 @@ def login_with_password(
     if user is None or not user.is_active:
         # Mitigación de enumeración de usuarios mediante costo temporal equivalente
         password_service.verify_dummy(payload.password)
+        audit_client.emit_event(
+            msg_id="AUTH_LOGIN_FAILED",
+            message="Intento fallido de inicio de sesión por contraseña",
+            severity=SYSLOG_SEVERITY_WARNING,
+            actor=payload.username,
+            action="login_password",
+            outcome="failure",
+            request=request,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales inválidas.",
@@ -103,6 +127,16 @@ def login_with_password(
         )
 
     if not password_service.verify_password(payload.password, user.password_hash):
+        audit_client.emit_event(
+            msg_id="AUTH_LOGIN_FAILED",
+            message="Intento fallido de inicio de sesión por contraseña",
+            severity=SYSLOG_SEVERITY_WARNING,
+            actor=user.username,
+            role=user.role,
+            action="login_password",
+            outcome="failure",
+            request=request,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales inválidas.",
@@ -119,6 +153,15 @@ def login_with_password(
 
     amr = ["pwd"]
     access_token, _, _ = jwt_service.create_access_token(user, amr=amr)
+    audit_client.emit_event(
+        msg_id="AUTH_LOGIN_SUCCESS",
+        message="Inicio de sesión exitoso mediante Argon2id",
+        actor=user.username,
+        role=user.role,
+        action="login_password",
+        outcome="success",
+        request=request,
+    )
     return TokenResponse(
         access_token=access_token,
         expires_in=jwt_service.expire_seconds,
@@ -166,10 +209,21 @@ def get_me(
     summary="Revocar inmediatamente la sesión JWT actual (Zero Trust)",
 )
 def logout(
+    request: Request,
     current_user: AuthenticatedUser = Depends(get_current_user),
     jwt_service: JWTService = Depends(get_jwt_service),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> LogoutResponse:
     jwt_service.revoke_token(current_user)
+    audit_client.emit_event(
+        msg_id="AUTH_LOGOUT",
+        message="Sesión JWT revocada explícitamente",
+        actor=current_user.username,
+        role=current_user.role,
+        action="logout",
+        outcome="success",
+        request=request,
+    )
     return LogoutResponse(jti=current_user.jti)
 
 
@@ -300,9 +354,11 @@ def webauthn_login_begin(
 )
 def webauthn_login_complete(
     payload: WebAuthnLoginCompleteRequest,
+    request: Request,
     repo: UserRepository = Depends(get_user_repository),
     webauthn_service: WebAuthnService = Depends(get_webauthn_service),
     jwt_service: JWTService = Depends(get_jwt_service),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> TokenResponse:
     try:
         user = repo.get_user_by_username(payload.username)
@@ -313,6 +369,15 @@ def webauthn_login_complete(
         ) from exc
 
     if user is None or not user.is_active or not credentials:
+        audit_client.emit_event(
+            msg_id="AUTH_WEBAUTHN_FAILED",
+            message="Autenticación FIDO2/WebAuthn rechazada (usuario o credenciales inválidas)",
+            severity=SYSLOG_SEVERITY_WARNING,
+            actor=payload.username,
+            action="login_webauthn",
+            outcome="failure",
+            request=request,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Autenticación FIDO2/WebAuthn rechazada.",
@@ -322,6 +387,16 @@ def webauthn_login_complete(
     try:
         verified = webauthn_service.complete_authentication(user, payload.credential, credentials)
     except WebAuthnServiceError as exc:
+        audit_client.emit_event(
+            msg_id="AUTH_WEBAUTHN_FAILED",
+            message="Autenticación FIDO2/WebAuthn rechazada en verificación criptográfica",
+            severity=SYSLOG_SEVERITY_WARNING,
+            actor=user.username,
+            role=user.role,
+            action="login_webauthn",
+            outcome="failure",
+            request=request,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
@@ -337,6 +412,15 @@ def webauthn_login_complete(
 
     amr = ["webauthn", "fido2"]
     access_token, _, _ = jwt_service.create_access_token(user, amr=amr)
+    audit_client.emit_event(
+        msg_id="AUTH_WEBAUTHN_SUCCESS",
+        message="Inicio de sesión exitoso mediante Passkey FIDO2/WebAuthn",
+        actor=user.username,
+        role=user.role,
+        action="login_webauthn",
+        outcome="success",
+        request=request,
+    )
     return TokenResponse(
         access_token=access_token,
         expires_in=jwt_service.expire_seconds,

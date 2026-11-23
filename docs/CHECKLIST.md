@@ -24,9 +24,9 @@
 | **Módulo A:** Gobernanza, Identidad, Bóveda y ABAC (20% rúbrica) | 20% | 20% | `20 / 20` |
 | **Módulo B:** Ciclo de Vida, Desidentificación y NIST SP 800-88 (25% rúbrica) | 22% | 22% | `22 / 22` |
 | **Módulo C:** Sandboxing, Syslog RFC 5424 y SIEM (25% rúbrica) | 22% | 0% | `0 / 22` |
-| **Fase 5:** Pruebas Automatizadas, GitHub Actions y Cloudflare Tunnel | 12% | 5% | `5 / 12` |
+| **Fase 5:** Pruebas Automatizadas, GitHub Actions y Cloudflare Tunnel | 12% | 8% | `8 / 12` |
 | **Fase 6:** Documentación (MD/PDF) y Defensa Técnica (30% rúbrica) | 14% | 0% | `0 / 14` |
-| **TOTAL GLOBAL** | **100%** | **57%** | **`57%`** |
+| **TOTAL GLOBAL** | **100%** | **60%** | **`60%`** |
 
 ---
 
@@ -79,7 +79,7 @@
 | ID | Estado | Peso | Elemento / Entregable | Rama / Rol | Evidencia / Criterio de Verificación |
 | :--- | :---: | :---: | :--- | :--- | :--- |
 | `F5-01` | [ ] | 4% | **Suite de pruebas automatizadas:** Unitarias, integración, políticas ABAC, $k$-anonimato/$l$-diversidad, NIST 800-88 y correlación SIEM | Todos | `pytest` corriendo y en verde (`100% pass`) |
-| `F5-02` | [ ] | 3% | **GitHub Actions (CI):** Pipeline en `.github/workflows/ci.yml` ejecutando linter, tests y validación de seguridad en PRs a `main` | `role/seguridad-infra` (Ubaldo) | Checks verdes en GitHub Actions |
+| `F5-02` | [x] | 3% | **GitHub Actions (CI):** Pipeline en `.github/workflows/ci.yml` ejecutando linter, tests y validación de seguridad en PRs a `main` | `role/privacidad-ciclo-vida` & `role/seguridad-infra` | 9/9 checks verdes en GitHub Actions (`ci.yml` + `security-owasp.yml` + `dependabot.yml`: Ruff, Pytest+Cov, OPA strict/tests, ShellCheck, pip-audit, Bandit, Semgrep OWASP Top 10, Gitleaks, Trivy, CodeQL v4 y `test_owasp_top10_security.py`) |
 | `F5-03` | [x] | 3% | **Túnel `cloudflared`:** Configuración reproducible para exponer la plataforma local hacia `tralaleritosmigajeros.uk` | `role/seguridad-infra` (Ubaldo) | `readyConnections: 4`, 0 errores, `tralaleritosmigajeros.uk` + `app.` + `siem.` operativos |
 | `F5-04` | [x] | 2% | **Endurecimiento Cloudflare:** SSL/TLS Strict, reglas WAF/Rate Limiting, cabeceras de seguridad y políticas Zero Trust | Ubaldo & Samuel | `verify-domain-security.sh` → `PASS=14 \| WARN=0 \| FAIL=0` + Access OTP en `siem.` |
 
@@ -107,3 +107,4 @@
 | 2026-11-21 | `MA-01` (+ bóveda `MA-02`) | Ubaldo | `role/seguridad-infra` | Autenticación Argon2id (salt único + HMAC-SHA256 pepper), FIDO2/WebAuthn Passkeys, sesiones JWT con revocación (`/auth/*`) y bóveda HashiCorp Vault Transit AEAD + KV v2 con tokens `pat_...` (`/vault/*`) verificados con `pytest` (11/11) y E2E Docker `verify-ma01-ma02.sh` (`PASS=14 / FAIL=0`) (**Avance: 20%**). |
 | 2026-11-22 | `MA-02`, `MA-03`, `MA-04` | Jezreel | `role/privacidad-ciclo-vida` | Integración segregada Vault+PostgreSQL (`/clinical/records`, `/clinical/records/segregated`, `/clinical/records/{id}/patient-identity`), cliente OPA fail-closed y política `hospital_abac.rego` (10/10 `opa test` + `opa check --strict`), motor de minimización cuantitativa/cualitativa por rol y verificación `pytest` (17/17), `ruff`, `verify-ma01-ma02.sh` (`PASS=14/FAIL=0`) y `verify-module-a.sh` (`PASS=9/FAIL=0`) (**Avance: 35%**). |
 | 2026-11-22 | `MB-01`, `MB-02`, `MB-03`, `MB-04` | Jezreel | `role/privacidad-ciclo-vida` | Planificador TTL automático (`TTLBackgroundScheduler` + `/lifecycle/ttl/*`), exportador *Safe Harbor* (18 IDs HIPAA, tope `90+`) + $k$-anonimato/$l$-diversidad JSON y CSV (`/lifecycle/exports/*`), borrado ARCO + NIST SP 800-88 (`CLEAR`/`PURGE` multi-pasada, `secure_zero_buffer` en memoria y purga Vault KV v2) y certificados JSON/PDF (`reportlab`) con verificación `SHA-256` (`/lifecycle/certificates/*`); verificado con `opa test` (13/13), `pytest` (21/21), `ruff` y E2E Docker (`verify-ma01-ma02.sh` 14/14, `verify-module-a.sh` 9/9, `verify-module-b.sh` 8/8) (**Avance: 57%**). |
+| 2026-11-22 | `F5-02` (DevSecOps & OWASP Top 10) | Jezreel | `role/privacidad-ciclo-vida` | Workflows `ci.yml` y `security-owasp.yml` con SHAs inmutables + `dependabot.yml` (cooldown 7d) + `pyproject.toml` + `test_owasp_top10_security.py` (A01–A10); remediados 40 CVEs en dependencias (`pyjwt`, `starlette`, `pytest`), 9 hallazgos Bandit `B608` (SQL estático parametrizado) y 1 hallazgo Semgrep; **9/9 jobs en verde** en GitHub Actions (`31/31 pytest`, 0 CVEs `pip-audit`, 0 hallazgos Bandit/Semgrep/Trivy/Gitleaks/CodeQL) (**Avance: 60%**). |

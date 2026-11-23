@@ -45,7 +45,29 @@
         </div>
         <div class="field-group">
           <label for="login-password">Contraseña (Argon2id)</label>
-          <input type="password" id="login-password" autocomplete="current-password" placeholder="Ingresa tu contraseña" required />
+          <div class="password-input-wrap">
+            <input type="password" id="login-password" autocomplete="current-password" placeholder="Ingresa tu contraseña" required />
+            <button
+              type="button"
+              class="password-toggle-btn"
+              id="toggle-login-password"
+              data-password-target="login-password"
+              aria-label="Mostrar contraseña"
+              aria-pressed="false"
+              title="Mostrar contraseña"
+            >
+              <svg class="icon-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="icon-eye-off is-hidden" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
+                <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
         </div>
         <div class="btn-row" style="flex-direction: column; align-items: stretch;">
           <button type="submit" class="btn btn-primary" id="btn-login-submit">
@@ -76,7 +98,55 @@
         </div>
         <div class="field-group">
           <label for="reg-password">Contraseña Robusta (OWASP A07)</label>
-          <input type="password" id="reg-password" autocomplete="new-password" placeholder="Mín. 12 caracteres (Aa1!)" required />
+          <div class="password-input-wrap">
+            <input type="password" id="reg-password" autocomplete="new-password" placeholder="Mín. 12 caracteres (Aa1!)" required />
+            <button
+              type="button"
+              class="password-toggle-btn"
+              id="toggle-reg-password"
+              data-password-target="reg-password"
+              aria-label="Mostrar contraseña"
+              aria-pressed="false"
+              title="Mostrar contraseña"
+            >
+              <svg class="icon-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="icon-eye-off is-hidden" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
+                <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+          <div class="password-actions-row">
+            <button
+              type="button"
+              class="btn-inline-tool"
+              id="btn-generate-password"
+              title="Generar una contraseña aleatoria criptográficamente segura (16 caracteres)"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+              </svg>
+              <span>Generar contraseña segura</span>
+            </button>
+            <button
+              type="button"
+              class="btn-inline-tool btn-inline-tool-muted"
+              id="btn-copy-reg-password"
+              title="Copiar contraseña al portapapeles"
+              disabled
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span id="copy-reg-password-label">Copiar</span>
+            </button>
+          </div>
           <span class="field-hint">Requiere al menos 12 caracteres, mayúscula, minúscula, dígito y símbolo.</span>
         </div>
         <div class="btn-row" style="flex-direction: column; align-items: stretch;">

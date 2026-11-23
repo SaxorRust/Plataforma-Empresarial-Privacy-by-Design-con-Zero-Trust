@@ -605,6 +605,101 @@ textarea:focus {
   border-color: var(--border-focus);
 }
 
+.password-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrap input {
+  padding-right: 42px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.password-toggle-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-panel-hover);
+}
+
+.password-toggle-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+  color: var(--text-primary);
+}
+
+.password-toggle-btn[aria-pressed="true"] {
+  color: var(--brand-teal);
+}
+
+.password-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-inline-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid hsla(174, 82%, 44%, 0.35);
+  background: var(--brand-teal-soft);
+  color: var(--brand-teal);
+  font-family: var(--font-sans);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-inline-tool:hover:not(:disabled) {
+  background: hsla(174, 82%, 44%, 0.24);
+  border-color: var(--brand-teal);
+}
+
+.btn-inline-tool:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.btn-inline-tool:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-inline-tool-muted {
+  border-color: var(--border-strong);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+}
+
+.btn-inline-tool-muted:hover:not(:disabled) {
+  background: var(--bg-panel-hover);
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+}
+
 /* ----------------------------------------------------------------------------
    Buttons & Badges
    ---------------------------------------------------------------------------- */

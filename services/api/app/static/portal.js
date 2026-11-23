@@ -256,6 +256,82 @@
     if (cardCerts) cardCerts.classList.toggle("is-hidden", !isAuditor);
   }
 
+  function setPasswordVisibility(inputEl, toggleBtn, visible) {
+    if (!inputEl || !toggleBtn) return;
+    inputEl.type = visible ? "text" : "password";
+    toggleBtn.setAttribute("aria-pressed", visible ? "true" : "false");
+    const label = visible ? "Ocultar contraseña" : "Mostrar contraseña";
+    toggleBtn.setAttribute("aria-label", label);
+    toggleBtn.setAttribute("title", label);
+    const eyeIcon = toggleBtn.querySelector(".icon-eye");
+    const eyeOffIcon = toggleBtn.querySelector(".icon-eye-off");
+    if (eyeIcon) eyeIcon.classList.toggle("is-hidden", visible);
+    if (eyeOffIcon) eyeOffIcon.classList.toggle("is-hidden", !visible);
+  }
+
+  function resetPasswordVisibility() {
+    document.querySelectorAll(".password-toggle-btn[data-password-target]").forEach(function (btn) {
+      const targetId = btn.getAttribute("data-password-target");
+      const inputEl = targetId ? byId(targetId) : null;
+      setPasswordVisibility(inputEl, btn, false);
+    });
+  }
+
+  function cryptoRandomIndex(max) {
+    if (max <= 1) return 0;
+    const limit = Math.floor(0x100000000 / max) * max;
+    const buf = new Uint32Array(1);
+    let value;
+    do {
+      window.crypto.getRandomValues(buf);
+      value = buf[0];
+    } while (value >= limit);
+    return value % max;
+  }
+
+  function generateSecurePassword(length) {
+    const targetLen = Math.max(12, length || 16);
+    const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    const lower = "abcdefghijkmnopqrstuvwxyz";
+    const digits = "23456789";
+    const symbols = "!@#$%^&*()-_=+[]{}?";
+    const all = upper + lower + digits + symbols;
+
+    const chars = [];
+    // Garantizar al menos 2 caracteres de cada clase exigida por OWASP A07
+    for (let i = 0; i < 2; i += 1) {
+      chars.push(upper[cryptoRandomIndex(upper.length)]);
+      chars.push(lower[cryptoRandomIndex(lower.length)]);
+      chars.push(digits[cryptoRandomIndex(digits.length)]);
+      chars.push(symbols[cryptoRandomIndex(symbols.length)]);
+    }
+    while (chars.length < targetLen) {
+      chars.push(all[cryptoRandomIndex(all.length)]);
+    }
+    // Mezcla Fisher-Yates con entropía criptográfica
+    for (let i = chars.length - 1; i > 0; i -= 1) {
+      const j = cryptoRandomIndex(i + 1);
+      const tmp = chars[i];
+      chars[i] = chars[j];
+      chars[j] = tmp;
+    }
+    return chars.join("");
+  }
+
+  let copyPasswordResetTimer = null;
+
+  function syncRegCopyButtonState() {
+    const copyBtn = byId("btn-copy-reg-password");
+    const copyLabel = byId("copy-reg-password-label");
+    const regInput = byId("reg-password");
+    if (!copyBtn || !regInput) return;
+    const hasValue = regInput.value.length > 0;
+    copyBtn.disabled = !hasValue;
+    if (!hasValue && copyLabel) {
+      copyLabel.textContent = "Copiar";
+    }
+  }
+
   function clearSensitiveDom() {
     byId("auth-me-output").textContent = "";
     byId("vault-inspector-output").textContent = "Sin operaciones activas.";
@@ -270,6 +346,8 @@
     byId("policy-allowed-fields").replaceChildren();
     byId("login-password").value = "";
     byId("reg-password").value = "";
+    resetPasswordVisibility();
+    syncRegCopyButtonState();
   }
 
   async function unlockWorkspace(tokenData) {
@@ -285,6 +363,7 @@
     }
 
     hideGateToast();
+    resetPasswordVisibility();
     byId("session-user-label").textContent = state.user.username + " (" + state.amr.join("+") + ")";
     byId("session-role-badge").textContent = state.user.role;
     setSelectedPurpose(ROLE_DEFAULT_PURPOSE[state.user.role] || "atencion_medica");
@@ -1096,19 +1175,84 @@
 
     tabLoginBtn.addEventListener("click", function () {
       tabLoginBtn.classList.add("active");
+      tabLoginBtn.setAttribute("aria-selected", "true");
       tabRegBtn.classList.remove("active");
+      tabRegBtn.setAttribute("aria-selected", "false");
       formLogin.classList.remove("is-hidden");
       formRegister.classList.add("is-hidden");
+      resetPasswordVisibility();
       hideGateToast();
     });
 
     tabRegBtn.addEventListener("click", function () {
       tabRegBtn.classList.add("active");
+      tabRegBtn.setAttribute("aria-selected", "true");
       tabLoginBtn.classList.remove("active");
+      tabLoginBtn.setAttribute("aria-selected", "false");
       formRegister.classList.remove("is-hidden");
       formLogin.classList.add("is-hidden");
+      resetPasswordVisibility();
       hideGateToast();
     });
+
+    document.querySelectorAll(".password-toggle-btn[data-password-target]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const targetId = btn.getAttribute("data-password-target");
+        const inputEl = targetId ? byId(targetId) : null;
+        if (!inputEl) return;
+        const shouldShow = inputEl.type === "password";
+        setPasswordVisibility(inputEl, btn, shouldShow);
+      });
+    });
+
+    const regPasswordInput = byId("reg-password");
+    const regPasswordToggle = byId("toggle-reg-password");
+    const btnGeneratePassword = byId("btn-generate-password");
+    const btnCopyRegPassword = byId("btn-copy-reg-password");
+    const copyRegPasswordLabel = byId("copy-reg-password-label");
+
+    if (regPasswordInput) {
+      regPasswordInput.addEventListener("input", syncRegCopyButtonState);
+    }
+
+    if (btnGeneratePassword && regPasswordInput) {
+      btnGeneratePassword.addEventListener("click", function () {
+        if (!window.crypto || !window.crypto.getRandomValues) {
+          showGateToast("Este navegador no soporta Web Crypto API para generar contraseñas seguras.", "err");
+          return;
+        }
+        regPasswordInput.value = generateSecurePassword(16);
+        setPasswordVisibility(regPasswordInput, regPasswordToggle, true);
+        syncRegCopyButtonState();
+        if (copyRegPasswordLabel) copyRegPasswordLabel.textContent = "Copiar";
+        regPasswordInput.focus();
+      });
+    }
+
+    if (btnCopyRegPassword && regPasswordInput) {
+      btnCopyRegPassword.addEventListener("click", async function () {
+        const value = regPasswordInput.value;
+        if (!value) return;
+        let copied = false;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          try {
+            await navigator.clipboard.writeText(value);
+            copied = true;
+          } catch (_) {
+            copied = false;
+          }
+        }
+        if (copied && copyRegPasswordLabel) {
+          copyRegPasswordLabel.textContent = "Copiada";
+          if (copyPasswordResetTimer) clearTimeout(copyPasswordResetTimer);
+          copyPasswordResetTimer = setTimeout(function () {
+            if (copyRegPasswordLabel) copyRegPasswordLabel.textContent = "Copiar";
+          }, 2000);
+        } else {
+          showGateToast("No se pudo acceder al portapapeles. Copia la contraseña manualmente.", "err");
+        }
+      });
+    }
 
     // Gate Authentication Handlers
     formLogin.addEventListener("submit", function (ev) {

@@ -37,6 +37,10 @@ def test_api_portal_ui_and_static_assets():
     assert "text/html" in portal_resp.headers["content-type"]
     assert 'id="auth-gate"' in portal_resp.text
     assert 'id="app-shell" class="is-hidden"' in portal_resp.text
+    assert 'id="toggle-login-password"' in portal_resp.text
+    assert 'id="toggle-reg-password"' in portal_resp.text
+    assert 'id="btn-generate-password"' in portal_resp.text
+    assert 'id="btn-copy-reg-password"' in portal_resp.text
     assert "script-src 'self'" in portal_resp.headers["content-security-policy"]
     assert "unsafe-inline" not in portal_resp.headers["content-security-policy"]
 
@@ -54,10 +58,14 @@ def test_api_portal_ui_and_static_assets():
     assert css_resp.status_code == 200
     assert "text/css" in css_resp.headers["content-type"]
     assert "--brand-teal" in css_resp.text
+    assert ".password-toggle-btn" in css_resp.text
+    assert ".password-actions-row" in css_resp.text
 
     js_resp = client.get("/ui/portal.js")
     assert js_resp.status_code == 200
     assert "javascript" in js_resp.headers["content-type"]
     assert "/clinical/records/segregated" in js_resp.text
+    assert "setPasswordVisibility" in js_resp.text
+    assert "generateSecurePassword" in js_resp.text
     assert "DEMO_PASSWORD" not in js_resp.text
 

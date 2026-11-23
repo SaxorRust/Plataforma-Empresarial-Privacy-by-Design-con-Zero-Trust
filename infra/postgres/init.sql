@@ -13,7 +13,7 @@ CREATE SCHEMA IF NOT EXISTS compliance;
 CREATE TABLE IF NOT EXISTS auth_identity.users (
     id UUID PRIMARY KEY,
     username VARCHAR(64) UNIQUE NOT NULL,
-    role VARCHAR(32) NOT NULL CHECK (role IN ('medico', 'enfermeria', 'analista', 'auditor_arco', 'admin_sec', 'paciente')),
+    role VARCHAR(32) NOT NULL CHECK (role IN ('medico', 'enfermeria', 'analista', 'auditor_arco', 'admin_sec', 'paciente', 'super_admin')),
     password_hash TEXT NOT NULL, -- Argon2id (salt único + pepper de aplicación)
     webauthn_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,

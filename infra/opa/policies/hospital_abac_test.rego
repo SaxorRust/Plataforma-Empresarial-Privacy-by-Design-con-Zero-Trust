@@ -170,3 +170,50 @@ test_medico_cannot_erase_or_export_anonymized if {
 	d_exp.allow == false
 }
 
+test_super_admin_full_operational_access if {
+	d_read := decision with input as {
+		"role": "super_admin",
+		"purpose": "administracion_total",
+		"action": "read_record",
+		"resource_purpose": "atencion_medica",
+		"is_sanitized": true,
+	}
+	d_read.allow == true
+	d_read.generalize_fields == false
+	d_read.mask_token == false
+	"diagnosis_cie10" in d_read.allowed_fields
+	"opaque_patient_token" in d_read.allowed_fields
+	"is_sanitized" in d_read.allowed_fields
+
+	d_erase := decision with input as {
+		"role": "super_admin",
+		"purpose": "administracion_total",
+		"action": "erase_nist_800_88",
+	}
+	d_erase.allow == true
+
+	d_exp := decision with input as {
+		"role": "super_admin",
+		"purpose": "administracion_total",
+		"action": "export_anonymized",
+	}
+	d_exp.allow == true
+}
+
+test_super_admin_still_requires_valid_purpose if {
+	d_empty := decision with input as {
+		"role": "super_admin",
+		"purpose": "",
+		"action": "read_record",
+	}
+	d_empty.allow == false
+
+	d_mkt := decision with input as {
+		"role": "super_admin",
+		"purpose": "marketing_comercial",
+		"action": "read_record",
+	}
+	d_mkt.allow == false
+}
+
+

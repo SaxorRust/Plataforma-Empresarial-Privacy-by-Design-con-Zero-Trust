@@ -18,6 +18,7 @@
     auditor_arco: "ejercicio_arco",
     admin_sec: "mantenimiento_ttl",
     paciente: "acceso_titular",
+    super_admin: "administracion_total",
   };
 
   const ROLE_DESCRIPTIONS = {
@@ -27,6 +28,7 @@
     auditor_arco: "Cumplimiento y auditoría: evaluación OPA, barrido TTL, borrado certificado ARCO/NIST SP 800-88 y descarga/verificación SHA-256 de certificados.",
     admin_sec: "Operaciones de seguridad (SecOps): gestión de bóveda Vault, evaluación OPA y barrido TTL. Separación de funciones: acceso clínico bloqueado (403).",
     paciente: "Acceso de titular: consulta exclusiva de sus propios registros bajo propósito acceso_titular.",
+    super_admin: "Super Administrador (Acceso Total): operación completa en Clínica/Vault, OPA/ABAC, Safe Harbor/(k, l), ARCO/NIST SP 800-88 y TTL con trazabilidad SIEM.",
   };
 
   const DEMO_COHORT = [
@@ -236,9 +238,10 @@
     }
 
     // Role-specific operational panels
-    const isMedico = role === "medico";
-    const isAdmin = role === "admin_sec";
-    const isAuditor = role === "auditor_arco";
+    const isSuperAdmin = role === "super_admin";
+    const isMedico = role === "medico" || isSuperAdmin;
+    const isAdmin = role === "admin_sec" || isSuperAdmin;
+    const isAuditor = role === "auditor_arco" || isSuperAdmin;
 
     const cardSegregated = byId("card-segregated-admission");
     if (cardSegregated) cardSegregated.classList.toggle("is-hidden", !isMedico);
@@ -800,7 +803,7 @@
       const btnWrap = document.createElement("div");
       btnWrap.className = "btn-row btn-row-flush";
 
-      if (rec.record_id && state.user && state.user.role === "medico") {
+      if (rec.record_id && state.user && (state.user.role === "medico" || state.user.role === "super_admin")) {
         const btnPii = document.createElement("button");
         btnPii.type = "button";
         btnPii.className = "btn btn-secondary btn-sm";
@@ -811,7 +814,7 @@
         btnWrap.appendChild(btnPii);
       }
 
-      if (rec.opaque_patient_token && !String(rec.opaque_patient_token).includes("...") && state.user && state.user.role === "auditor_arco") {
+      if (rec.opaque_patient_token && !String(rec.opaque_patient_token).includes("...") && state.user && (state.user.role === "auditor_arco" || state.user.role === "super_admin")) {
         const btnArco = document.createElement("button");
         btnArco.type = "button";
         btnArco.className = "btn btn-danger btn-sm";

@@ -191,7 +191,7 @@ def require_roles(*allowed_roles: UserRole) -> Callable[[AuthenticatedUser], Aut
     def _dependency(
         current_user: AuthenticatedUser = Depends(get_current_user),
     ) -> AuthenticatedUser:
-        if current_user.role not in allowed_set:
+        if current_user.role != "super_admin" and current_user.role not in allowed_set:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(

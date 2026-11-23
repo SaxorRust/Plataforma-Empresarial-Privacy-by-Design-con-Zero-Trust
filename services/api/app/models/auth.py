@@ -5,7 +5,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-UserRole = Literal["medico", "enfermeria", "analista", "auditor_arco", "admin_sec", "paciente"]
+UserRole = Literal[
+    "medico",
+    "enfermeria",
+    "analista",
+    "auditor_arco",
+    "admin_sec",
+    "paciente",
+    "super_admin",
+]
 
 
 @dataclass(frozen=True)

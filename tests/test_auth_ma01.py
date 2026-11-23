@@ -493,3 +493,31 @@ def test_webauthn_passkey_full_flow_anti_phishing_replay_and_cloning():
     assert del_resp.status_code == 204
     me_after = client.get("/auth/me", headers=auth_headers).json()
     assert me_after["webauthn_enabled"] is False
+
+
+def test_super_admin_register_login_and_me():
+    client, _repo, _pwd, _jwt = _build_auth_test_client()
+
+    reg = client.post(
+        "/auth/register",
+        json={
+            "username": "super_admin",
+            "password": "SuperAdmin#2026!ZT",
+            "role": "super_admin",
+        },
+    )
+    assert reg.status_code == 201
+    assert reg.json()["role"] == "super_admin"
+
+    login = client.post(
+        "/auth/login",
+        json={"username": "super_admin", "password": "SuperAdmin#2026!ZT"},
+    )
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+
+    me = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    assert me.json()["role"] == "super_admin"
+    assert me.json()["username"] == "super_admin"
+

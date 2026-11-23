@@ -59,6 +59,19 @@ resource_purpose_compatible if {
 	input.resource_purpose in ["atencion_medica", "investigacion_estadistica"]
 }
 
+# Super administrador con propósito operativo válido tiene compatibilidad total.
+resource_purpose_compatible if {
+	input.role == "super_admin"
+	input.purpose in [
+		"administracion_total",
+		"atencion_medica",
+		"investigacion_estadistica",
+		"ejercicio_arco",
+		"mantenimiento_ttl",
+		"acceso_titular",
+	]
+}
+
 # ------------------------------------------------------------------------------
 # Reglas de autorización (rol + propósito + acción + estado del recurso)
 # ------------------------------------------------------------------------------
@@ -68,7 +81,7 @@ allow if {
 	record_state_allowed
 }
 
-# Los registros ya sanitizados (NIST SP 800-88) solo son visibles para auditoría ARCO
+# Los registros ya sanitizados (NIST SP 800-88) solo son visibles para auditoría ARCO y super_admin
 record_state_allowed if {
 	not resource_is_sanitized
 }
@@ -77,6 +90,11 @@ record_state_allowed if {
 	resource_is_sanitized
 	input.role == "auditor_arco"
 	input.purpose == "ejercicio_arco"
+}
+
+record_state_allowed if {
+	resource_is_sanitized
+	input.role == "super_admin"
 }
 
 valid_role_purpose if {
@@ -130,6 +148,31 @@ valid_role_purpose if {
 	input.purpose == "acceso_titular"
 	input.action in ["read_record", "read_single_record"]
 	input.resource_owner_match == true
+}
+
+# Super administrador: acceso operativo completo a todos los módulos con trazabilidad SIEM.
+# Exige declaración de propósito operativo válido (bloquea X-Purpose vacío o marketing_comercial).
+valid_role_purpose if {
+	input.role == "super_admin"
+	input.purpose in [
+		"administracion_total",
+		"atencion_medica",
+		"investigacion_estadistica",
+		"ejercicio_arco",
+		"mantenimiento_ttl",
+		"acceso_titular",
+	]
+	input.action in [
+		"create_record",
+		"read_record",
+		"read_single_record",
+		"update_record",
+		"detokenize_pii",
+		"export_anonymized",
+		"read_audit",
+		"erase_nist_800_88",
+		"run_ttl_sweep",
+	]
 }
 
 # ------------------------------------------------------------------------------
@@ -192,6 +235,22 @@ allowed_fields := [
 	allow
 	input.role == "paciente"
 	input.purpose == "acceso_titular"
+} else := [
+	"record_id",
+	"opaque_patient_token",
+	"age_years",
+	"zip_prefix",
+	"gender",
+	"diagnosis_cie10",
+	"diagnosis_summary",
+	"department",
+	"purpose_scope",
+	"is_sanitized",
+	"ttl_expires_at",
+	"created_at",
+] if {
+	allow
+	input.role == "super_admin"
 } else := []
 
 # ------------------------------------------------------------------------------
@@ -220,7 +279,7 @@ reason := "Autorizado conforme a propósito declarado y política de minimizaci�
 	input.purpose == ""
 } else := "Acceso denegado: registro sanitizado conforme a NIST SP 800-88 (solo visible para auditoría ARCO)" if {
 	resource_is_sanitized
-	input.role != "auditor_arco"
+	not input.role in ["auditor_arco", "super_admin"]
 } else := "Acceso denegado: consulta individual prohibida para analista (prevención de singularización)" if {
 	input.role == "analista"
 	input.action == "read_single_record"

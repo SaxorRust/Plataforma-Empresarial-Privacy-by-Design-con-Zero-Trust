@@ -9,727 +9,709 @@
 </head>
 <body>
   <!-- ========================================================================
-       Top Header: Identidad Institucional, Selector X-Purpose y Estado Sesión
+       ZERO TRUST AUTHENTICATION GATE (Bloquea toda la app hasta autenticar)
        ======================================================================== -->
-  <header class="topbar">
-    <div class="brand-block">
-      <div class="brand-mark" aria-hidden="true">ZT</div>
-      <div class="brand-titles">
-        <h1>Plataforma Hospitalaria Privacy-by-Design &amp; Zero Trust</h1>
-        <div class="brand-subtitle">BUAP FCC · Ingeniería en Ciberseguridad (ICSA 252) · Módulos A, B y C</div>
+  <section id="auth-gate" class="auth-gate" aria-label="Control de Acceso Zero Trust">
+    <div class="auth-gate-card">
+      <div class="auth-gate-header">
+        <div class="auth-gate-brand">
+          <div class="brand-mark" aria-hidden="true">ZT</div>
+          <div>
+            <h1>Hospital Privacy-by-Design &amp; Zero Trust</h1>
+            <div class="brand-subtitle">BUAP FCC · Ingeniería en Ciberseguridad (ICSA 252)</div>
+          </div>
+        </div>
+        <p>Acceso restringido por verificación explícita de identidad (Argon2id + Pepper o Passkey FIDO2/WebAuthn) y autorización contextual ABAC/OPA.</p>
+      </div>
+
+      <div id="gate-toast" class="toast-banner hidden" role="alert" aria-live="polite">
+        <span id="gate-toast-text"></span>
+      </div>
+
+      <div class="gate-tabs" role="tablist">
+        <button type="button" class="gate-tab-btn active" id="gate-tab-login" role="tab" aria-selected="true">
+          Iniciar Sesión
+        </button>
+        <button type="button" class="gate-tab-btn" id="gate-tab-register" role="tab" aria-selected="false">
+          Registrar Cuenta
+        </button>
+      </div>
+
+      <!-- Panel Login (Argon2id o Passkey FIDO2) -->
+      <form id="form-login">
+        <div class="field-group">
+          <label for="login-username">Usuario institucional</label>
+          <input type="text" id="login-username" class="mono-input" autocomplete="username" placeholder="ej. dr_garcia" required />
+        </div>
+        <div class="field-group">
+          <label for="login-password">Contraseña (Argon2id)</label>
+          <input type="password" id="login-password" autocomplete="current-password" placeholder="Ingresa tu contraseña" required />
+        </div>
+        <div class="btn-row" style="flex-direction: column; align-items: stretch;">
+          <button type="submit" class="btn btn-primary" id="btn-login-submit">
+            Ingresar con Argon2id
+          </button>
+          <button type="button" class="btn btn-secondary" id="btn-webauthn-login">
+            Ingresar con Passkey (FIDO2 / WebAuthn)
+          </button>
+        </div>
+      </form>
+
+      <!-- Panel Registro (oculto por defecto) -->
+      <form id="form-register" class="is-hidden">
+        <div class="field-group">
+          <label for="reg-username">Nombre de usuario</label>
+          <input type="text" id="reg-username" class="mono-input" autocomplete="username" placeholder="ej. dra_lopez" required />
+        </div>
+        <div class="field-group">
+          <label for="reg-role">Rol Institucional (ABAC)</label>
+          <select id="reg-role">
+            <option value="medico">medico (Atención Clínica y Bóveda)</option>
+            <option value="enfermeria">enfermeria (Asistencia / Token Enmascarado)</option>
+            <option value="analista">analista (Estadística Safe Harbor / k,l)</option>
+            <option value="auditor_arco">auditor_arco (Derechos ARCO / NIST 800-88)</option>
+            <option value="admin_sec">admin_sec (SecOps / TTL / Sin Datos Clínicos)</option>
+            <option value="paciente">paciente (Acceso Titular)</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label for="reg-password">Contraseña Robusta (OWASP A07)</label>
+          <input type="password" id="reg-password" autocomplete="new-password" placeholder="Mín. 12 caracteres (Aa1!)" required />
+          <span class="field-hint">Requiere al menos 12 caracteres, mayúscula, minúscula, dígito y símbolo.</span>
+        </div>
+        <div class="btn-row" style="flex-direction: column; align-items: stretch;">
+          <button type="submit" class="btn btn-primary" id="btn-register-submit">
+            Crear Cuenta y Autenticar
+          </button>
+        </div>
+      </form>
+
+      <div class="gate-footer-note">
+        <span>Zero Trust Default-Deny · JWT 30m</span>
+        <span id="gate-health-pill" class="badge badge-info">API</span>
       </div>
     </div>
-
-    <div class="context-toolbar">
-      <div class="purpose-selector-wrap">
-        <label for="global-purpose-select">X-Purpose (MA-03):</label>
-        <select id="global-purpose-select">
-          <option value="atencion_medica">atencion_medica (Clínica)</option>
-          <option value="investigacion_estadistica">investigacion_estadistica (Analítica)</option>
-          <option value="ejercicio_arco">ejercicio_arco (Derechos ARCO)</option>
-          <option value="mantenimiento_ttl">mantenimiento_ttl (SecOps TTL)</option>
-          <option value="acceso_titular">acceso_titular (Paciente)</option>
-          <option value="marketing_comercial">marketing_comercial (Function Creep - 403)</option>
-          <option value="">(Sin propósito - 403 Default Deny)</option>
-        </select>
-      </div>
-
-      <div class="session-pill" id="session-indicator">
-        <span class="session-dot" id="session-dot"></span>
-        <span id="session-user-label">Sin sesión activa</span>
-        <span class="role-chip" id="session-role-badge">anónimo</span>
-      </div>
-
-      <button type="button" class="btn btn-secondary btn-sm" id="btn-top-logout" disabled>
-        Revocar JWT
-      </button>
-    </div>
-  </header>
+  </section>
 
   <!-- ========================================================================
-       Main Workspace Shell
+       AUTHENTICATED APPLICATION SHELL (Oculto hasta verificar JWT en /auth/me)
        ======================================================================== -->
-  <div class="workspace-shell">
-    <!-- Sidebar Navigation & Quick Role Switcher -->
-    <aside class="sidebar" aria-label="Navegación de módulos">
-      <div>
-        <div class="nav-group-title">Módulos de Plataforma</div>
-        <nav class="nav-list">
-          <button type="button" class="nav-btn active" id="nav-tab-auth" data-tab="tab-auth">
-            <span>1. Identidad &amp; Passkeys</span>
-            <span class="nav-code">MA-01</span>
-          </button>
-          <button type="button" class="nav-btn" id="nav-tab-clinical" data-tab="tab-clinical">
-            <span>2. Clínica &amp; Bóveda PII</span>
-            <span class="nav-code">MA-02/04</span>
-          </button>
-          <button type="button" class="nav-btn" id="nav-tab-opa" data-tab="tab-opa">
-            <span>3. Motor ABAC / OPA</span>
-            <span class="nav-code">MA-03</span>
-          </button>
-          <button type="button" class="nav-btn" id="nav-tab-export" data-tab="tab-export">
-            <span>4. Safe Harbor &amp; (k, l)</span>
-            <span class="nav-code">MB-02</span>
-          </button>
-          <button type="button" class="nav-btn" id="nav-tab-arco" data-tab="tab-arco">
-            <span>5. ARCO &amp; NIST 800-88</span>
-            <span class="nav-code">MB-01/04</span>
-          </button>
-        </nav>
-
-        <div class="role-switcher-box">
-          <h3>Cambio Rápido de Rol (Demo)</h3>
-          <p>Autentica o registra al instante un usuario de demostración y ajusta su <code>X-Purpose</code>:</p>
-          <div class="persona-grid">
-            <button type="button" class="persona-btn" id="quick-role-medico" data-role="medico" data-purpose="atencion_medica">
-              medico
-            </button>
-            <button type="button" class="persona-btn" id="quick-role-enfermeria" data-role="enfermeria" data-purpose="atencion_medica">
-              enfermeria
-            </button>
-            <button type="button" class="persona-btn" id="quick-role-analista" data-role="analista" data-purpose="investigacion_estadistica">
-              analista
-            </button>
-            <button type="button" class="persona-btn" id="quick-role-auditor" data-role="auditor_arco" data-purpose="ejercicio_arco">
-              auditor_arco
-            </button>
-            <button type="button" class="persona-btn" id="quick-role-admin" data-role="admin_sec" data-purpose="mantenimiento_ttl">
-              admin_sec
-            </button>
-            <button type="button" class="persona-btn" id="quick-role-creep" data-role="medico" data-purpose="marketing_comercial">
-              Test 403 Creep
-            </button>
-          </div>
+  <div id="app-shell" class="is-hidden">
+    <!-- Top Header: Identidad Verificada, Selector X-Purpose y Cierre de Sesión -->
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true">ZT</div>
+        <div class="brand-titles">
+          <h1>Plataforma Hospitalaria Privacy-by-Design &amp; Zero Trust</h1>
+          <div class="brand-subtitle">BUAP FCC · Ingeniería en Ciberseguridad (ICSA 252) · Sesión Autenticada</div>
         </div>
       </div>
 
-      <div class="external-links">
-        <a class="ext-link" id="link-siem-console" href="https://siem.tralaleritosmigajeros.uk" target="_blank" rel="noopener noreferrer">
-          <span>Consola SIEM &amp; SOC (MC-02/04)</span>
-          <span>:8080 ↗</span>
-        </a>
-        <a class="ext-link" href="/docs" target="_blank" rel="noopener noreferrer">
-          <span>Especificación OpenAPI</span>
-          <span>/docs ↗</span>
-        </a>
-        <a class="ext-link" href="/health" target="_blank" rel="noopener noreferrer">
-          <span>Health Check JSON</span>
-          <span>/health ↗</span>
-        </a>
+      <div class="context-toolbar">
+        <div class="purpose-selector-wrap">
+          <label for="global-purpose-select">X-Purpose (MA-03):</label>
+          <select id="global-purpose-select">
+            <option value="atencion_medica">atencion_medica (Clínica)</option>
+            <option value="investigacion_estadistica">investigacion_estadistica (Analítica)</option>
+            <option value="ejercicio_arco">ejercicio_arco (Derechos ARCO)</option>
+            <option value="mantenimiento_ttl">mantenimiento_ttl (SecOps TTL)</option>
+            <option value="acceso_titular">acceso_titular (Paciente)</option>
+            <option value="marketing_comercial">marketing_comercial (Prueba 403 Function Creep)</option>
+            <option value="">(Sin propósito - Prueba 403 Default Deny)</option>
+          </select>
+        </div>
+
+        <div class="session-pill" id="session-indicator">
+          <span class="session-dot active" id="session-dot"></span>
+          <span id="session-user-label">Verificando...</span>
+          <span class="role-chip" id="session-role-badge">rol</span>
+        </div>
+
+        <button type="button" class="btn btn-danger btn-sm" id="btn-top-logout">
+          Cerrar Sesión (Revocar JWT)
+        </button>
       </div>
-    </aside>
+    </header>
 
-    <!-- Main Stage -->
-    <main class="main-stage">
-      <!-- Telemetry Strip -->
-      <section class="status-strip" aria-label="Telemetría Zero Trust">
-        <div class="telemetry-card">
-          <span class="telemetry-label">API &amp; Sandboxing (MC-01)</span>
-          <div class="telemetry-value">
-            <span class="badge badge-ok" id="tel-api-status">VERIFICANDO</span>
-            <span id="tel-api-env">seccomp-bpf</span>
-          </div>
-        </div>
-        <div class="telemetry-card">
-          <span class="telemetry-label">Cloudflare Edge (F5-03/04)</span>
-          <div class="telemetry-value">
-            <span class="badge badge-info" id="tel-edge-badge">LOCAL</span>
-            <span id="tel-edge-host">loopback</span>
-          </div>
-        </div>
-        <div class="telemetry-card">
-          <span class="telemetry-label">HashiCorp Vault (MA-02)</span>
-          <div class="telemetry-value">
-            <span class="badge badge-info" id="tel-vault-badge">TRANSIT+KV2</span>
-            <span id="tel-vault-key">key v1</span>
-          </div>
-        </div>
-        <div class="telemetry-card">
-          <span class="telemetry-label">Motor ABAC OPA (MA-03)</span>
-          <div class="telemetry-value">
-            <span class="badge badge-ok" id="tel-opa-badge">FAIL-CLOSED</span>
-            <span id="tel-opa-ver">v1.1.0</span>
-          </div>
-        </div>
-      </section>
+    <!-- Main Workspace Shell -->
+    <div class="workspace-shell">
+      <!-- Sidebar Navigation (Filtrado por rol autenticado) -->
+      <aside class="sidebar" aria-label="Navegación de módulos">
+        <div>
+          <div class="nav-group-title">Módulos Autorizados</div>
+          <nav class="nav-list">
+            <button type="button" class="nav-btn active" id="nav-tab-auth" data-tab="tab-auth" data-roles="medico,enfermeria,analista,auditor_arco,admin_sec,paciente">
+              <span>1. Mi Sesión &amp; Passkeys</span>
+              <span class="nav-code">MA-01</span>
+            </button>
+            <button type="button" class="nav-btn" id="nav-tab-clinical" data-tab="tab-clinical" data-roles="medico,enfermeria,analista,auditor_arco,admin_sec,paciente">
+              <span>2. Clínica &amp; Bóveda PII</span>
+              <span class="nav-code">MA-02/04</span>
+            </button>
+            <button type="button" class="nav-btn" id="nav-tab-opa" data-tab="tab-opa" data-roles="auditor_arco,admin_sec">
+              <span>3. Motor ABAC / OPA</span>
+              <span class="nav-code">MA-03</span>
+            </button>
+            <button type="button" class="nav-btn" id="nav-tab-export" data-tab="tab-export" data-roles="analista">
+              <span>4. Safe Harbor &amp; (k, l)</span>
+              <span class="nav-code">MB-02</span>
+            </button>
+            <button type="button" class="nav-btn" id="nav-tab-arco" data-tab="tab-arco" data-roles="auditor_arco,admin_sec">
+              <span>5. ARCO, TTL &amp; NIST 800-88</span>
+              <span class="nav-code">MB-01/04</span>
+            </button>
+          </nav>
 
-      <!-- Global Toast / Feedback Banner -->
-      <div id="global-toast" class="toast-banner hidden" role="status" aria-live="polite">
-        <span id="global-toast-text"></span>
-        <button type="button" class="btn btn-secondary btn-sm" id="global-toast-close">Cerrar</button>
-      </div>
-
-      <!-- ====================================================================
-           TAB 1: AUTENTICACIÓN ROBUSTA (MA-01: Argon2id + FIDO2/WebAuthn)
-           ==================================================================== -->
-      <section id="tab-auth" class="tab-panel active" aria-labelledby="heading-auth">
-        <div class="section-header">
-          <div>
-            <h2 id="heading-auth">Módulo A (MA-01) — Autenticación Robusta &amp; Gestión de Sesión Zero Trust</h2>
-            <p>Respaldo criptográfico Argon2id (Salt único + HMAC-SHA256 Pepper), Passkeys FIDO2/WebAuthn (ECDSA P-256) y sesiones JWT con revocación inmediata.</p>
+          <div class="role-switcher-box">
+            <h3>Alcance de tu Rol ABAC</h3>
+            <p id="role-scope-summary">Tu vista y permisos se restringen dinámicamente conforme a tu identidad JWT y política OPA.</p>
           </div>
-          <button type="button" class="btn btn-secondary btn-sm" id="btn-seed-demo-users">
-            Inicializar 5 Roles Demo
-          </button>
         </div>
 
-        <div class="panel-grid-2">
-          <!-- Login & WebAuthn Authentication -->
-          <div class="panel-card">
-            <div class="panel-card-header">
-              <h3>Iniciar Sesión (Argon2id o Passkey FIDO2)</h3>
-              <span class="badge badge-info">POST /auth/login</span>
+        <div class="external-links">
+          <a class="ext-link" id="link-siem-console" href="https://siem.tralaleritosmigajeros.uk" target="_blank" rel="noopener noreferrer">
+            <span>Consola SIEM &amp; SOC (MC-02/04)</span>
+            <span>:8080 ↗</span>
+          </a>
+          <a class="ext-link" href="/docs" target="_blank" rel="noopener noreferrer">
+            <span>Especificación OpenAPI</span>
+            <span>/docs ↗</span>
+          </a>
+        </div>
+      </aside>
+
+      <!-- Main Stage -->
+      <main class="main-stage">
+        <!-- Telemetry Strip -->
+        <section class="status-strip" aria-label="Telemetría Zero Trust">
+          <div class="telemetry-card">
+            <span class="telemetry-label">API &amp; Sandboxing (MC-01)</span>
+            <div class="telemetry-value">
+              <span class="badge badge-ok" id="tel-api-status">OK</span>
+              <span id="tel-api-env">seccomp-bpf</span>
             </div>
-            <p class="panel-desc">Ingresa con credenciales verificadas con Argon2id o utiliza tu autenticador FIDO2/WebAuthn registrado.</p>
+          </div>
+          <div class="telemetry-card">
+            <span class="telemetry-label">Cloudflare Edge (F5-03/04)</span>
+            <div class="telemetry-value">
+              <span class="badge badge-info" id="tel-edge-badge">LOCAL</span>
+              <span id="tel-edge-host">loopback</span>
+            </div>
+          </div>
+          <div class="telemetry-card">
+            <span class="telemetry-label">HashiCorp Vault (MA-02)</span>
+            <div class="telemetry-value">
+              <span class="badge badge-info" id="tel-vault-badge">TRANSIT+KV2</span>
+              <span id="tel-vault-key">key v1</span>
+            </div>
+          </div>
+          <div class="telemetry-card">
+            <span class="telemetry-label">Motor ABAC OPA (MA-03)</span>
+            <div class="telemetry-value">
+              <span class="badge badge-ok" id="tel-opa-badge">FAIL-CLOSED</span>
+              <span id="tel-opa-ver">v1.1.0</span>
+            </div>
+          </div>
+        </section>
 
-            <form id="form-login">
-              <div class="field-group">
-                <label for="login-username">Nombre de usuario</label>
-                <input type="text" id="login-username" class="mono-input" value="dr_garcia" required />
-              </div>
-              <div class="field-group">
-                <label for="login-password">Contraseña</label>
-                <input type="password" id="login-password" value="Hospital!2026#Secure" required />
-                <span class="field-hint">Clave demo estándar: Hospital!2026#Secure</span>
-              </div>
-              <div class="btn-row">
-                <button type="submit" class="btn btn-primary" id="btn-login-submit">
-                  Autenticar con Argon2id
-                </button>
-                <button type="button" class="btn btn-secondary" id="btn-webauthn-login">
-                  Autenticar con Passkey (FIDO2)
-                </button>
-              </div>
-            </form>
+        <!-- Global Toast / Feedback Banner -->
+        <div id="global-toast" class="toast-banner hidden" role="status" aria-live="polite">
+          <span id="global-toast-text"></span>
+          <button type="button" class="btn btn-secondary btn-sm" id="global-toast-close">Cerrar</button>
+        </div>
+
+        <!-- ==================================================================
+             TAB 1: MI SESIÓN JWT & PASSKEYS FIDO2/WEBAUTHN (MA-01)
+             ================================================================== -->
+        <section id="tab-auth" class="tab-panel active" aria-labelledby="heading-auth">
+          <div class="section-header">
+            <div>
+              <h2 id="heading-auth">Módulo A (MA-01) — Sesión Autenticada &amp; Passkeys FIDO2/WebAuthn</h2>
+              <p>Inspección de claims JWT verificados en <code>/auth/me</code> y administración de llaves criptográficas FIDO2/WebAuthn (ECDSA P-256).</p>
+            </div>
           </div>
 
-          <!-- Registration Form -->
-          <div class="panel-card">
-            <div class="panel-card-header">
-              <h3>Registro de Personal / Rol ABAC</h3>
-              <span class="badge badge-ok">POST /auth/register</span>
+          <div class="panel-grid-2">
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h3>Claims de Sesión JWT Activa (<code>GET /auth/me</code>)</h3>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-me">Verificar /auth/me</button>
+              </div>
+              <pre class="code-output" id="auth-me-output">Cargando claims de sesión...</pre>
             </div>
-            <p class="panel-desc">Crea una cuenta vinculada a uno de los roles institucionales evaluados por Open Policy Agent.</p>
 
-            <form id="form-register">
-              <div class="form-grid">
-                <div class="field-group">
-                  <label for="reg-username">Usuario</label>
-                  <input type="text" id="reg-username" class="mono-input" placeholder="ej. dra_lopez" required />
-                </div>
-                <div class="field-group">
-                  <label for="reg-role">Rol Institucional (ABAC)</label>
-                  <select id="reg-role">
-                    <option value="medico">medico (Atención Clínica)</option>
-                    <option value="enfermeria">enfermeria (Asistencia / Token Enmascarado)</option>
-                    <option value="analista">analista (Estadística Generalizada)</option>
-                    <option value="auditor_arco">auditor_arco (Derechos ARCO / NIST 800-88)</option>
-                    <option value="admin_sec">admin_sec (SecOps / Sin Acceso Clínico)</option>
-                    <option value="paciente">paciente (Acceso Titular)</option>
-                  </select>
-                </div>
-              </div>
-              <div class="field-group">
-                <label for="reg-password">Contraseña Robusta (OWASP A07)</label>
-                <input type="password" id="reg-password" value="Hospital!2026#Secure" required />
-                <span class="field-hint">Mínimo 12 caracteres, mayúscula, minúscula, número y símbolo.</span>
-              </div>
-              <div class="btn-row">
-                <button type="submit" class="btn btn-primary" id="btn-register-submit">
-                  Registrar Usuario
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h3>Mis Passkeys FIDO2 / WebAuthn</h3>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-webauthn-register">
+                  + Registrar Passkey en Navegador
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-
-        <!-- Active JWT Claims & WebAuthn Passkeys Management -->
-        <div class="panel-grid-2">
-          <div class="panel-card">
-            <div class="panel-card-header">
-              <h3>Claims de Sesión JWT Activa (<code>/auth/me</code>)</h3>
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-me">Verificar /auth/me</button>
+              <p class="panel-desc">Vincula una llave biométrica o de hardware para iniciar sesión sin contraseña con protección anti-phishing y anti-replay.</p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Credential ID</th>
+                      <th>Sign Count</th>
+                      <th>Transports</th>
+                      <th>Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody id="webauthn-creds-tbody">
+                    <tr><td colspan="4">Cargando credenciales...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <pre class="code-output" id="auth-me-output">No hay sesión autenticada. Inicia sesión o usa los botones de "Cambio Rápido de Rol" en la barra lateral.</pre>
           </div>
+        </section>
 
-          <div class="panel-card">
-            <div class="panel-card-header">
-              <h3>Credenciales FIDO2 / WebAuthn Passkeys</h3>
-              <button type="button" class="btn btn-primary btn-sm" id="btn-webauthn-register">
-                + Registrar Passkey en Navegador
+        <!-- ==================================================================
+             TAB 2: CLÍNICA, BÓVEDA HASHICORP VAULT Y MINIMIZACIÓN (MA-02, MA-04)
+             ================================================================== -->
+        <section id="tab-clinical" class="tab-panel" aria-labelledby="heading-clinical">
+          <div class="section-header">
+            <div>
+              <h2 id="heading-clinical">Módulo A (MA-02 &amp; MA-04) — Expedientes Clínicos, Bóveda Vault y Minimización</h2>
+              <p>Los identificadores directos (Nombre, CURP, NSS) se cifran con Transit AEAD en HashiCorp Vault; PostgreSQL solo almacena el token opaco <code>pat_...</code> y atributos clínicos.</p>
+            </div>
+            <div class="btn-row">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-seed-clinical-cohort">
+                + Cargar Cohorte Clínica (6 Pacientes)
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-refresh-records">
+                Consultar Expedientes (GET /clinical/records)
               </button>
             </div>
-            <p class="panel-desc">Vincula una llave de hardware o biométrica del navegador (`navigator.credentials.create`) contra phishing y replay.</p>
+          </div>
+
+          <div class="panel-grid-2">
+            <!-- Segregated Admission Form (Solo visible para medico) -->
+            <div class="panel-card" id="card-segregated-admission">
+              <div class="panel-card-header">
+                <h3>Alta Segregada de Paciente y Expediente</h3>
+                <span class="badge badge-ok">POST /clinical/records/segregated</span>
+              </div>
+              <p class="panel-desc">Requiere rol <code>medico</code> y propósito <code>atencion_medica</code>. La API rechaza cualquier CURP, NSS o correo en el resumen clínico.</p>
+
+              <form id="form-segregated-record">
+                <div class="form-grid">
+                  <div class="field-group">
+                    <label for="pii-fullname">Nombre Completo (→ Vault)</label>
+                    <input type="text" id="pii-fullname" value="Elena Morales Ríos" required />
+                  </div>
+                  <div class="field-group">
+                    <label for="pii-curp">CURP Oficial (18 caracteres → Vault)</label>
+                    <input type="text" id="pii-curp" class="mono-input" value="MORE880412MPLRNA09" maxlength="18" required />
+                  </div>
+                  <div class="field-group">
+                    <label for="pii-nss">NSS IMSS (11 dígitos → Vault)</label>
+                    <input type="text" id="pii-nss" class="mono-input" value="42881234567" maxlength="11" required />
+                  </div>
+                  <div class="field-group">
+                    <label for="pii-email">Correo de Contacto (→ Vault)</label>
+                    <input type="email" id="pii-email" value="elena.morales@paciente.mx" />
+                  </div>
+                </div>
+
+                <div class="form-grid">
+                  <div class="field-group">
+                    <label for="clin-age">Edad (años → PostgreSQL)</label>
+                    <input type="number" id="clin-age" value="38" min="0" max="130" required />
+                  </div>
+                  <div class="field-group">
+                    <label for="clin-zip">Código Postal (5 dígitos)</label>
+                    <input type="text" id="clin-zip" class="mono-input" value="72000" maxlength="5" required />
+                  </div>
+                  <div class="field-group">
+                    <label for="clin-gender">Género</label>
+                    <select id="clin-gender">
+                      <option value="F">F</option>
+                      <option value="M">M</option>
+                      <option value="X">X</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="clin-cie10">Diagnóstico CIE-10</label>
+                    <input type="text" id="clin-cie10" class="mono-input" value="I10" required />
+                  </div>
+                  <div class="field-group">
+                    <label for="clin-dept">Departamento Hospitalario</label>
+                    <select id="clin-dept">
+                      <option value="cardiologia">cardiologia</option>
+                      <option value="medicina_interna">medicina_interna</option>
+                      <option value="urgencias">urgencias</option>
+                      <option value="neurologia">neurologia</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="clin-ttl">Retención TTL (Horas, opcional)</label>
+                    <input type="number" id="clin-ttl" placeholder="ej. 720" min="1" max="87600" />
+                  </div>
+                </div>
+
+                <div class="field-group">
+                  <label for="clin-summary">Resumen Clínico (Sin PII directa — validado por Regex MA-02)</label>
+                  <input type="text" id="clin-summary" value="Hipertensión esencial controlada con seguimiento ambulatorio." required />
+                </div>
+
+                <div class="btn-row">
+                  <button type="submit" class="btn btn-primary" id="btn-create-segregated">
+                    Tokenizar en Vault y Guardar Expediente
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Direct Vault Operations & Detokenization Inspector -->
+            <div class="panel-card" id="card-vault-inspector">
+              <div class="panel-card-header">
+                <h3>Bóveda HashiCorp Vault (Transit AEAD + KV v2)</h3>
+                <div class="btn-row">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-vault-status">Estado Vault</button>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-vault-rotate">Rotar Llave Transit</button>
+                </div>
+              </div>
+              <p class="panel-desc">Inspecciona o resuelve un token opaco <code>pat_...</code> bajo doble control ABAC/OPA + Vault.</p>
+
+              <div class="field-group">
+                <label for="vault-inspect-token">Token Opaco de Paciente (<code>pat_&lt;32 hex&gt;</code>)</label>
+                <input type="text" id="vault-inspect-token" class="mono-input" placeholder="pat_..." />
+              </div>
+              <div class="btn-row">
+                <button type="button" class="btn btn-primary btn-sm" id="btn-vault-detokenize">
+                  Detokenizar PII Directa (GET /vault/patients/{token})
+                </button>
+              </div>
+
+              <div class="field-group" style="margin-top: 14px;">
+                <label>Resultado de Bóveda / Resolución de Identidad</label>
+                <pre class="code-output" id="vault-inspector-output">Selecciona "Resolver PII" en cualquier expediente o consulta el estado de la bóveda.</pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dynamic Minimized Records Table -->
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h3>Expedientes Clínicos Proyectados por Política de Minimización (MA-04)</h3>
+              <div class="btn-row">
+                <input type="text" id="filter-dept" placeholder="Filtrar departamento..." style="width: 190px;" />
+                <label style="font-size: 0.78rem; display: inline-flex; align-items: center; gap: 6px;">
+                  <input type="checkbox" id="filter-include-sanitized" />
+                  Incluir sanitizados (solo auditor_arco)
+                </label>
+              </div>
+            </div>
+
+            <div class="policy-banner" id="active-policy-banner">
+              <div>
+                <strong>Política OPA Aplicada:</strong>
+                <span id="policy-meta-summary">Haz clic en "Consultar Expedientes" para visualizar las columnas permitidas a tu rol.</span>
+              </div>
+              <div class="field-pills" id="policy-allowed-fields"></div>
+            </div>
+
             <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Credential ID</th>
-                    <th>Sign Count</th>
-                    <th>Transports</th>
-                    <th>Acción</th>
-                  </tr>
+              <table id="clinical-records-table">
+                <thead id="clinical-records-thead">
+                  <tr><th>Estructura dinámica según rol ABAC</th></tr>
                 </thead>
-                <tbody id="webauthn-creds-tbody">
-                  <tr><td colspan="4">Autentícate para listar tus Passkeys registradas.</td></tr>
+                <tbody id="clinical-records-tbody">
+                  <tr><td>Haz clic en "Consultar Expedientes" para cargar los datos autorizados.</td></tr>
                 </tbody>
               </table>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- ====================================================================
-           TAB 2: CLÍNICA, BÓVEDA HASHICORP VAULT Y MINIMIZACIÓN (MA-02, MA-04)
-           ==================================================================== -->
-      <section id="tab-clinical" class="tab-panel" aria-labelledby="heading-clinical">
-        <div class="section-header">
-          <div>
-            <h2 id="heading-clinical">Módulo A (MA-02 &amp; MA-04) — Segregación en Bóveda Vault y Minimización por Rol</h2>
-            <p>Los identificadores directos (Nombre, CURP, NSS) se cifran con Transit AEAD en HashiCorp Vault; PostgreSQL solo almacena el token opaco <code>pat_...</code> y atributos clínicos.</p>
-          </div>
-          <div class="btn-row">
-            <button type="button" class="btn btn-secondary btn-sm" id="btn-seed-clinical-cohort">
-              + Cargar Cohorte Clínica Demo (6 Pacientes)
-            </button>
-            <button type="button" class="btn btn-primary btn-sm" id="btn-refresh-records">
-              Consultar Expedientes (GET /clinical/records)
+        <!-- ==================================================================
+             TAB 3: SIMULADOR OPA / ABAC & PREVENCIÓN DE FUNCTION CREEP (MA-03)
+             ================================================================== -->
+        <section id="tab-opa" class="tab-panel" aria-labelledby="heading-opa">
+          <div class="section-header">
+            <div>
+              <h2 id="heading-opa">Módulo A (MA-03) — Motor ABAC Open Policy Agent &amp; Prevención de Function Creep</h2>
+              <p>Auditoría de decisiones en tiempo real contra <code>hospital_abac.rego</code>: Default-Deny, limitación de finalidad (<code>X-Purpose</code>), prevención de singularización y separación de funciones.</p>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-opa-status">
+              Verificar Salud de OPA (/clinical/policy/status)
             </button>
           </div>
-        </div>
 
-        <div class="panel-grid-2">
-          <!-- Segregated Admission Form (Vault + PostgreSQL) -->
-          <div class="panel-card">
-            <div class="panel-card-header">
-              <h3>Alta Segregada de Paciente y Expediente</h3>
-              <span class="badge badge-ok">POST /clinical/records/segregated</span>
+          <div class="panel-grid-2">
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h3>Evaluador Interactivo de Decisiones ABAC</h3>
+                <span class="badge badge-info">POST /clinical/policy/evaluate</span>
+              </div>
+              <p class="panel-desc">Simula la evaluación de políticas Rego (autorizado para <code>auditor_arco</code> y <code>admin_sec</code>).</p>
+
+              <form id="form-opa-sim">
+                <div class="form-grid">
+                  <div class="field-group">
+                    <label for="opa-sim-role">Rol del Sujeto</label>
+                    <select id="opa-sim-role">
+                      <option value="medico">medico</option>
+                      <option value="enfermeria">enfermeria</option>
+                      <option value="analista">analista</option>
+                      <option value="auditor_arco">auditor_arco</option>
+                      <option value="admin_sec">admin_sec</option>
+                      <option value="paciente">paciente</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="opa-sim-purpose">Propósito Declarado (X-Purpose)</label>
+                    <select id="opa-sim-purpose">
+                      <option value="atencion_medica">atencion_medica</option>
+                      <option value="investigacion_estadistica">investigacion_estadistica</option>
+                      <option value="ejercicio_arco">ejercicio_arco</option>
+                      <option value="mantenimiento_ttl">mantenimiento_ttl</option>
+                      <option value="acceso_titular">acceso_titular</option>
+                      <option value="publicidad">publicidad (No autorizado)</option>
+                      <option value="">(Vacío / Ausente)</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="opa-sim-action">Acción Solicitada</label>
+                    <select id="opa-sim-action">
+                      <option value="read_record">read_record (Listado)</option>
+                      <option value="read_single_record">read_single_record (Individual)</option>
+                      <option value="create_record">create_record (Alta)</option>
+                      <option value="update_record">update_record (Edición)</option>
+                      <option value="detokenize_pii">detokenize_pii (Vault PII)</option>
+                      <option value="export_anonymized">export_anonymized (Safe Harbor)</option>
+                      <option value="erase_nist_800_88">erase_nist_800_88 (Borrado ARCO)</option>
+                      <option value="run_ttl_sweep">run_ttl_sweep (Purga TTL)</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="opa-sim-res-purpose">Finalidad de Recolección del Recurso</label>
+                    <select id="opa-sim-res-purpose">
+                      <option value="atencion_medica">atencion_medica</option>
+                      <option value="investigacion_estadistica">investigacion_estadistica</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="btn-row">
+                  <label style="font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px;">
+                    <input type="checkbox" id="opa-sim-sanitized" />
+                    Registro ya sanitizado (NIST SP 800-88)
+                  </label>
+                  <label style="font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px;">
+                    <input type="checkbox" id="opa-sim-owner" />
+                    Titular coincide (resource_owner_match)
+                  </label>
+                </div>
+
+                <div class="btn-row">
+                  <button type="submit" class="btn btn-primary" id="btn-opa-evaluate">
+                    Evaluar Política en OPA
+                  </button>
+                </div>
+              </form>
             </div>
-            <p class="panel-desc">Requiere rol <code>medico</code> y propósito <code>atencion_medica</code>. La API rechaza automáticamente cualquier CURP, NSS o correo en el resumen clínico.</p>
 
-            <form id="form-segregated-record">
-              <div class="form-grid">
-                <div class="field-group">
-                  <label for="pii-fullname">Nombre Completo (Aislado en Vault)</label>
-                  <input type="text" id="pii-fullname" value="Elena Morales Ríos" required />
-                </div>
-                <div class="field-group">
-                  <label for="pii-curp">CURP Oficial (18 caracteres → Vault)</label>
-                  <input type="text" id="pii-curp" class="mono-input" value="MORE880412MPLRNA09" maxlength="18" required />
-                </div>
-                <div class="field-group">
-                  <label for="pii-nss">NSS IMSS (11 dígitos → Vault)</label>
-                  <input type="text" id="pii-nss" class="mono-input" value="42881234567" maxlength="11" required />
-                </div>
-                <div class="field-group">
-                  <label for="pii-email">Correo de Contacto (→ Vault)</label>
-                  <input type="email" id="pii-email" value="elena.morales@paciente.mx" />
-                </div>
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h3>Decisión Estructurada del Motor OPA</h3>
+                <span class="badge badge-ok" id="opa-decision-badge">LISTO</span>
               </div>
+              <p class="panel-desc">Escenarios preconfigurados de auditoría contra Function Creep:</p>
+              <div class="btn-row" style="margin-bottom: 12px;">
+                <button type="button" class="btn btn-secondary btn-sm" id="preset-opa-medico">Médico Válido</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="preset-opa-creep">Médico con Marketing (403)</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="preset-opa-singling">Analista Singularización (403)</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="preset-opa-admin">Admin_Sec Clínico (403)</button>
+              </div>
+              <pre class="code-output" id="opa-decision-output">Selecciona un escenario o ejecuta el evaluador para ver la respuesta JSON de Open Policy Agent.</pre>
+            </div>
+          </div>
+        </section>
 
-              <div class="form-grid">
-                <div class="field-group">
-                  <label for="clin-age">Edad (años → PostgreSQL)</label>
-                  <input type="number" id="clin-age" value="38" min="0" max="130" required />
-                </div>
-                <div class="field-group">
-                  <label for="clin-zip">Código Postal (5 dígitos → PostgreSQL)</label>
-                  <input type="text" id="clin-zip" class="mono-input" value="72000" maxlength="5" required />
-                </div>
-                <div class="field-group">
-                  <label for="clin-gender">Género</label>
-                  <select id="clin-gender">
-                    <option value="F">F</option>
-                    <option value="M">M</option>
-                    <option value="X">X</option>
-                  </select>
-                </div>
-                <div class="field-group">
-                  <label for="clin-cie10">Diagnóstico CIE-10</label>
-                  <input type="text" id="clin-cie10" class="mono-input" value="I10" required />
-                </div>
-                <div class="field-group">
-                  <label for="clin-dept">Departamento Hospitalario</label>
-                  <select id="clin-dept">
-                    <option value="cardiologia">cardiologia</option>
-                    <option value="medicina_interna">medicina_interna</option>
-                    <option value="urgencias">urgencias</option>
-                    <option value="neurologia">neurologia</option>
-                  </select>
-                </div>
-                <div class="field-group">
-                  <label for="clin-ttl">Retención TTL (Horas, opcional)</label>
-                  <input type="number" id="clin-ttl" placeholder="ej. 720" min="1" max="87600" />
-                </div>
-              </div>
-
-              <div class="field-group">
-                <label for="clin-summary">Resumen Clínico (Sin PII directa — validado por Regex MA-02)</label>
-                <input type="text" id="clin-summary" value="Hipertensión esencial controlada con seguimiento ambulatorio." required />
-              </div>
-
-              <div class="btn-row">
-                <button type="submit" class="btn btn-primary" id="btn-create-segregated">
-                  Tokenizar en Vault y Guardar Expediente
-                </button>
-              </div>
-            </form>
+        <!-- ==================================================================
+             TAB 4: EXPORTACIÓN SAFE HARBOR + K-ANONIMATO + L-DIVERSIDAD (MB-02)
+             ================================================================== -->
+        <section id="tab-export" class="tab-panel" aria-labelledby="heading-export">
+          <div class="section-header">
+            <div>
+              <h2 id="heading-export">Módulo B (MB-02) — Desidentificación HIPAA Safe Harbor + k-Anonimato y l-Diversidad</h2>
+              <p>Suprime los 18 identificadores HIPAA (tope <code>90+</code> en edad) y ajusta la retícula adaptativa de cuasi-identificadores en modo Fail-Closed.</p>
+            </div>
           </div>
 
-          <!-- Direct Vault Operations & Detokenization Inspector -->
+          <div class="panel-grid-2">
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h3>Parámetros del Motor Matemático (k, l)</h3>
+                <span class="badge badge-info">POST /lifecycle/exports/anonymized</span>
+              </div>
+              <p class="panel-desc">Exclusivo para rol <code>analista</code> con propósito <code>investigacion_estadistica</code>.</p>
+
+              <form id="form-anonymized-export">
+                <div class="form-grid">
+                  <div class="field-group">
+                    <label for="exp-k">Parámetro k-Anonimato (mín. 2)</label>
+                    <input type="number" id="exp-k" value="2" min="2" max="50" required />
+                  </div>
+                  <div class="field-group">
+                    <label for="exp-l">Parámetro l-Diversidad (mín. 1)</label>
+                    <input type="number" id="exp-l" value="2" min="1" max="20" required />
+                  </div>
+                  <div class="field-group">
+                    <label for="exp-suppression">Límite de Supresión (0.00 - 0.50)</label>
+                    <input type="number" id="exp-suppression" value="0.25" min="0" max="0.5" step="0.05" required />
+                  </div>
+                  <div class="field-group">
+                    <label for="exp-dept">Departamento (opcional)</label>
+                    <input type="text" id="exp-dept" placeholder="Todos los departamentos" />
+                  </div>
+                </div>
+                <div class="btn-row">
+                  <button type="submit" class="btn btn-primary" id="btn-export-json">
+                    Generar Dataset Anonimizado (JSON)
+                  </button>
+                  <button type="button" class="btn btn-secondary" id="btn-export-csv">
+                    Descargar Archivo CSV Safe Harbor
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h3>Métricas Alcanzadas &amp; Clases de Equivalencia</h3>
+                <span class="badge badge-ok" id="export-metrics-badge">SAFE HARBOR 18/18</span>
+              </div>
+              <pre class="code-output" id="export-metrics-output">Ejecuta una exportación para verificar las clases de equivalencia y el nivel de generalización aplicado.</pre>
+            </div>
+          </div>
+
           <div class="panel-card">
             <div class="panel-card-header">
-              <h3>Bóveda HashiCorp Vault (Transit AEAD + KV v2)</h3>
-              <div class="btn-row">
-                <button type="button" class="btn btn-secondary btn-sm" id="btn-vault-status">Estado Vault</button>
-                <button type="button" class="btn btn-secondary btn-sm" id="btn-vault-rotate">Rotar Llave Transit</button>
-              </div>
+              <h3>Registros Desidentificados Exportados</h3>
             </div>
-            <p class="panel-desc">Inspecciona o resuelve un token opaco <code>pat_...</code> bajo doble control ABAC/OPA + Vault.</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Rango de Edad</th>
+                    <th>CP Generalizado</th>
+                    <th>Género</th>
+                    <th>Diagnóstico CIE-10</th>
+                    <th>Departamento</th>
+                    <th>Año</th>
+                  </tr>
+                </thead>
+                <tbody id="export-records-tbody">
+                  <tr><td colspan="6">Sin exportación ejecutada aún.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
 
-            <div class="field-group">
-              <label for="vault-inspect-token">Token Opaco de Paciente (<code>pat_&lt;32 hex&gt;</code>)</label>
-              <input type="text" id="vault-inspect-token" class="mono-input" placeholder="pat_..." />
+        <!-- ==================================================================
+             TAB 5: DERECHOS ARCO, BORRADO NIST SP 800-88 Y TTL (MB-01/03/04)
+             ================================================================== -->
+        <section id="tab-arco" class="tab-panel" aria-labelledby="heading-arco">
+          <div class="section-header">
+            <div>
+              <h2 id="heading-arco">Módulo B (MB-01, MB-03 &amp; MB-04) — Derechos ARCO, Borrado NIST SP 800-88 y TTL</h2>
+              <p>Sobrescritura criptográfica multi-pasada en PostgreSQL (<code>CLEAR</code> / <code>PURGE</code>), puesta a cero de buffers en RAM, destrucción en Vault KV v2 y emisión de certificados JSON/PDF firmados con SHA-256.</p>
             </div>
-            <div class="btn-row">
-              <button type="button" class="btn btn-primary btn-sm" id="btn-vault-detokenize">
-                Detokenizar PII Directa (GET /vault/patients/{token})
+          </div>
+
+          <div class="panel-grid-2">
+            <div class="panel-card" id="card-arco-erasure">
+              <div class="panel-card-header">
+                <h3>Ejecutar Cancelación / Supresión ARCO</h3>
+                <span class="badge badge-danger">POST /lifecycle/arco/erasure</span>
+              </div>
+              <p class="panel-desc">Exclusivo para rol <code>auditor_arco</code> con propósito <code>ejercicio_arco</code>.</p>
+
+              <form id="form-arco-erasure">
+                <div class="field-group">
+                  <label for="arco-token">Token Opaco del Titular (<code>pat_&lt;32 hex&gt;</code>)</label>
+                  <input type="text" id="arco-token" class="mono-input" placeholder="pat_..." required />
+                </div>
+                <div class="form-grid">
+                  <div class="field-group">
+                    <label for="arco-method">Método NIST SP 800-88 Rev. 1</label>
+                    <select id="arco-method">
+                      <option value="NIST_800_88_PURGE">NIST_800_88_PURGE (3 pasadas + Vault Destroy)</option>
+                      <option value="NIST_800_88_CLEAR">NIST_800_88_CLEAR (2 pasadas lógicas)</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="arco-folio">Folio Auditable ARCO</label>
+                    <input type="text" id="arco-folio" class="mono-input" value="ARCO-2026-0042" required />
+                  </div>
+                </div>
+                <div class="field-group">
+                  <label for="arco-reason">Justificación Legal / Operativa</label>
+                  <input type="text" id="arco-reason" value="Ejercicio de derecho ARCO de Cancelación y Supresión (LFPDPPP)" required />
+                </div>
+                <div class="btn-row">
+                  <button type="submit" class="btn btn-danger" id="btn-arco-submit">
+                    Ejecutar Sanitización NIST SP 800-88 y Emitir Certificado
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h3>Retención Temporal Automatizada (TTL — MB-01)</h3>
+                <div class="btn-row">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-ttl-status">Estado TTL</button>
+                  <button type="button" class="btn btn-primary btn-sm" id="btn-ttl-sweep">Ejecutar Barrido TTL Ahora</button>
+                </div>
+              </div>
+              <p class="panel-desc">Purga expedientes cuyo <code>ttl_expires_at</code> ha vencido y destruye tokens huérfanos en HashiCorp Vault.</p>
+              <pre class="code-output" id="ttl-output">Consulta el estado del planificador TTL o ejecuta un barrido inmediato (auditor_arco o admin_sec).</pre>
+            </div>
+          </div>
+
+          <div class="panel-card" id="card-certificates-list">
+            <div class="panel-card-header">
+              <h3>Certificados de Sanitización Emitidos (JSON + PDF + Verificación SHA-256)</h3>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-certificates">
+                Actualizar Certificados (GET /lifecycle/certificates)
               </button>
             </div>
-
-            <div class="field-group" style="margin-top: 14px;">
-              <label>Resultado de Bóveda / Resolución de Identidad</label>
-              <pre class="code-output" id="vault-inspector-output">Selecciona "Resolver PII" en cualquier expediente o consulta el estado de la bóveda.</pre>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Certificado ID</th>
+                    <th>Token Titular</th>
+                    <th>Método NIST</th>
+                    <th>Registros / Vault</th>
+                    <th>Firma SHA-256</th>
+                    <th>Acciones y Descargas</th>
+                  </tr>
+                </thead>
+                <tbody id="certificates-tbody">
+                  <tr><td colspan="6">Haz clic en "Actualizar Certificados".</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
-        </div>
+        </section>
 
-        <!-- Dynamic Minimized Records Table -->
-        <div class="panel-card">
+        <!-- Live Audit & Response Inspector -->
+        <section class="panel-card" aria-label="Bitácora de respuestas HTTP">
           <div class="panel-card-header">
-            <h3>Expedientes Clínicos Proyectados por Política de Minimización (MA-04)</h3>
-            <div class="btn-row">
-              <input type="text" id="filter-dept" placeholder="Filtrar departamento..." style="width: 190px;" />
-              <label style="font-size: 0.78rem; display: inline-flex; align-items: center; gap: 6px;">
-                <input type="checkbox" id="filter-include-sanitized" />
-                Incluir sanitizados (solo auditor_arco)
-              </label>
-            </div>
+            <h3>Inspector Zero Trust &amp; Trazabilidad HTTP (<code>X-Request-ID</code>)</h3>
+            <span class="badge badge-info" id="last-request-meta">Listo</span>
           </div>
-
-          <!-- Active Policy Metadata Banner -->
-          <div class="policy-banner" id="active-policy-banner">
-            <div>
-              <strong>Política OPA Aplicada:</strong>
-              <span id="policy-meta-summary">Ejecuta una consulta para visualizar las columnas proyectadas según tu rol y propósito.</span>
-            </div>
-            <div class="field-pills" id="policy-allowed-fields"></div>
-          </div>
-
-          <div class="table-wrap">
-            <table id="clinical-records-table">
-              <thead id="clinical-records-thead">
-                <tr><th>Cargando estructura dinámica según rol...</th></tr>
-              </thead>
-              <tbody id="clinical-records-tbody">
-                <tr><td>Haz clic en "Consultar Expedientes" o cambia de rol en la barra lateral.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- ====================================================================
-           TAB 3: SIMULADOR OPA / ABAC & PREVENCIÓN DE FUNCTION CREEP (MA-03)
-           ==================================================================== -->
-      <section id="tab-opa" class="tab-panel" aria-labelledby="heading-opa">
-        <div class="section-header">
-          <div>
-            <h2 id="heading-opa">Módulo A (MA-03) — Motor ABAC Open Policy Agent &amp; Prevención de Function Creep</h2>
-            <p>Valida decisiones en tiempo real contra <code>hospital_abac.rego</code>: Default-Deny, limitación de finalidad (<code>X-Purpose</code>), prevención de singularización y separación de funciones.</p>
-          </div>
-          <button type="button" class="btn btn-secondary btn-sm" id="btn-opa-status">
-            Verificar Salud de OPA (/clinical/policy/status)
-          </button>
-        </div>
-
-        <div class="panel-grid-2">
-          <div class="panel-card">
-            <div class="panel-card-header">
-              <h3>Evaluador Interactivo de Decisiones ABAC</h3>
-              <span class="badge badge-info">POST /clinical/policy/evaluate</span>
-            </div>
-            <p class="panel-desc">Simula la evaluación de políticas Rego (requiere sesión <code>admin_sec</code> o <code>auditor_arco</code>, o prueba directamente contra los endpoints reales).</p>
-
-            <form id="form-opa-sim">
-              <div class="form-grid">
-                <div class="field-group">
-                  <label for="opa-sim-role">Rol del Sujeto</label>
-                  <select id="opa-sim-role">
-                    <option value="medico">medico</option>
-                    <option value="enfermeria">enfermeria</option>
-                    <option value="analista">analista</option>
-                    <option value="auditor_arco">auditor_arco</option>
-                    <option value="admin_sec">admin_sec</option>
-                    <option value="paciente">paciente</option>
-                  </select>
-                </div>
-                <div class="field-group">
-                  <label for="opa-sim-purpose">Propósito Declarado (X-Purpose)</label>
-                  <select id="opa-sim-purpose">
-                    <option value="atencion_medica">atencion_medica</option>
-                    <option value="investigacion_estadistica">investigacion_estadistica</option>
-                    <option value="ejercicio_arco">ejercicio_arco</option>
-                    <option value="mantenimiento_ttl">mantenimiento_ttl</option>
-                    <option value="acceso_titular">acceso_titular</option>
-                    <option value="publicidad">publicidad (No autorizado)</option>
-                    <option value="">(Vacío / Ausente)</option>
-                  </select>
-                </div>
-                <div class="field-group">
-                  <label for="opa-sim-action">Acción Solicitada</label>
-                  <select id="opa-sim-action">
-                    <option value="read_record">read_record (Listado)</option>
-                    <option value="read_single_record">read_single_record (Individual)</option>
-                    <option value="create_record">create_record (Alta)</option>
-                    <option value="update_record">update_record (Edición)</option>
-                    <option value="detokenize_pii">detokenize_pii (Vault PII)</option>
-                    <option value="export_anonymized">export_anonymized (Safe Harbor)</option>
-                    <option value="erase_nist_800_88">erase_nist_800_88 (Borrado ARCO)</option>
-                    <option value="run_ttl_sweep">run_ttl_sweep (Purga TTL)</option>
-                  </select>
-                </div>
-                <div class="field-group">
-                  <label for="opa-sim-res-purpose">Finalidad de Recolección del Recurso</label>
-                  <select id="opa-sim-res-purpose">
-                    <option value="atencion_medica">atencion_medica</option>
-                    <option value="investigacion_estadistica">investigacion_estadistica</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="btn-row">
-                <label style="font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px;">
-                  <input type="checkbox" id="opa-sim-sanitized" />
-                  Registro ya sanitizado (NIST SP 800-88)
-                </label>
-                <label style="font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px;">
-                  <input type="checkbox" id="opa-sim-owner" />
-                  Titular coincide (resource_owner_match)
-                </label>
-              </div>
-
-              <div class="btn-row">
-                <button type="submit" class="btn btn-primary" id="btn-opa-evaluate">
-                  Evaluar Política en OPA
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <div class="panel-card">
-            <div class="panel-card-header">
-              <h3>Decisión Estructurada del Motor OPA</h3>
-              <span class="badge badge-ok" id="opa-decision-badge">LISTO</span>
-            </div>
-            <p class="panel-desc">Escenarios preconfigurados de prueba rápida contra Function Creep:</p>
-            <div class="btn-row" style="margin-bottom: 12px;">
-              <button type="button" class="btn btn-secondary btn-sm" id="preset-opa-medico">Médico Válido</button>
-              <button type="button" class="btn btn-secondary btn-sm" id="preset-opa-creep">Médico con Marketing (403)</button>
-              <button type="button" class="btn btn-secondary btn-sm" id="preset-opa-singling">Analista Singularización (403)</button>
-              <button type="button" class="btn btn-secondary btn-sm" id="preset-opa-admin">Admin_Sec Clínico (403)</button>
-            </div>
-            <pre class="code-output" id="opa-decision-output">Selecciona un escenario o ejecuta el evaluador para ver la respuesta JSON de Open Policy Agent.</pre>
-          </div>
-        </div>
-      </section>
-
-      <!-- ====================================================================
-           TAB 4: EXPORTACIÓN SAFE HARBOR + K-ANONIMATO + L-DIVERSIDAD (MB-02)
-           ==================================================================== -->
-      <section id="tab-export" class="tab-panel" aria-labelledby="heading-export">
-        <div class="section-header">
-          <div>
-            <h2 id="heading-export">Módulo B (MB-02) — Desidentificación HIPAA Safe Harbor + k-Anonimato y l-Diversidad</h2>
-            <p>Suprime los 18 identificadores HIPAA (tope <code>90+</code> en edad) y ajusta la retícula adaptativa de cuasi-identificadores para garantizar clases de equivalencia con tamaño $\ge k$ y diagnósticos distintos $\ge l$.</p>
-          </div>
-        </div>
-
-        <div class="panel-grid-2">
-          <div class="panel-card">
-            <div class="panel-card-header">
-              <h3>Parámetros del Motor Matemático (k, l)</h3>
-              <span class="badge badge-info">POST /lifecycle/exports/anonymized</span>
-            </div>
-            <p class="panel-desc">Requiere rol <code>analista</code> y propósito <code>investigacion_estadistica</code>. Si el dataset no puede satisfacer $(k, l)$ dentro del límite de supresión, opera en modo Fail-Closed (HTTP 422).</p>
-
-            <form id="form-anonymized-export">
-              <div class="form-grid">
-                <div class="field-group">
-                  <label for="exp-k">Parámetro k-Anonimato (mín. 2)</label>
-                  <input type="number" id="exp-k" value="2" min="2" max="50" required />
-                </div>
-                <div class="field-group">
-                  <label for="exp-l">Parámetro l-Diversidad (mín. 1)</label>
-                  <input type="number" id="exp-l" value="2" min="1" max="20" required />
-                </div>
-                <div class="field-group">
-                  <label for="exp-suppression">Límite de Supresión (0.00 - 0.50)</label>
-                  <input type="number" id="exp-suppression" value="0.25" min="0" max="0.5" step="0.05" required />
-                </div>
-                <div class="field-group">
-                  <label for="exp-dept">Departamento (opcional)</label>
-                  <input type="text" id="exp-dept" placeholder="Todos los departamentos" />
-                </div>
-              </div>
-              <div class="btn-row">
-                <button type="submit" class="btn btn-primary" id="btn-export-json">
-                  Generar Dataset Anonimizado (JSON)
-                </button>
-                <button type="button" class="btn btn-secondary" id="btn-export-csv">
-                  Descargar Archivo CSV Safe Harbor
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <div class="panel-card">
-            <div class="panel-card-header">
-              <h3>Métricas Alcanzadas &amp; Clases de Equivalencia</h3>
-              <span class="badge badge-ok" id="export-metrics-badge">SAFE HARBOR 18/18</span>
-            </div>
-            <pre class="code-output" id="export-metrics-output">Carga la cohorte clínica demo en la pestaña 2, cambia al rol "analista" y genera la exportación para inspeccionar (k, l) y las clases de equivalencia.</pre>
-          </div>
-        </div>
-
-        <div class="panel-card">
-          <div class="panel-card-header">
-            <h3>Registros Desidentificados Exportados</h3>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Rango de Edad</th>
-                  <th>CP Generalizado</th>
-                  <th>Género</th>
-                  <th>Diagnóstico CIE-10</th>
-                  <th>Departamento</th>
-                  <th>Año</th>
-                </tr>
-              </thead>
-              <tbody id="export-records-tbody">
-                <tr><td colspan="6">Sin exportación ejecutada aún.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- ====================================================================
-           TAB 5: DERECHOS ARCO, BORRADO NIST SP 800-88 Y TTL (MB-01, MB-03, MB-04)
-           ==================================================================== -->
-      <section id="tab-arco" class="tab-panel" aria-labelledby="heading-arco">
-        <div class="section-header">
-          <div>
-            <h2 id="heading-arco">Módulo B (MB-01, MB-03 &amp; MB-04) — Derechos ARCO, Borrado NIST SP 800-88 y Certificados SHA-256</h2>
-            <p>Sobrescritura criptográfica multi-pasada en PostgreSQL (<code>CLEAR</code> / <code>PURGE</code>), puesta a cero de buffers en RAM (<code>secure_zero_buffer</code>), destrucción en Vault KV v2 y emisión de certificados JSON/PDF firmados con SHA-256.</p>
-          </div>
-        </div>
-
-        <div class="panel-grid-2">
-          <!-- ARCO Erasure Form -->
-          <div class="panel-card">
-            <div class="panel-card-header">
-              <h3>Ejecutar Cancelación / Supresión ARCO</h3>
-              <span class="badge badge-danger">POST /lifecycle/arco/erasure</span>
-            </div>
-            <p class="panel-desc">Requiere rol <code>auditor_arco</code> y propósito <code>ejercicio_arco</code>.</p>
-
-            <form id="form-arco-erasure">
-              <div class="field-group">
-                <label for="arco-token">Token Opaco del Titular (<code>pat_&lt;32 hex&gt;</code>)</label>
-                <input type="text" id="arco-token" class="mono-input" placeholder="pat_..." required />
-              </div>
-              <div class="form-grid">
-                <div class="field-group">
-                  <label for="arco-method">Método NIST SP 800-88 Rev. 1</label>
-                  <select id="arco-method">
-                    <option value="NIST_800_88_PURGE">NIST_800_88_PURGE (3 pasadas + Vault Destroy)</option>
-                    <option value="NIST_800_88_CLEAR">NIST_800_88_CLEAR (2 pasadas lógicas)</option>
-                  </select>
-                </div>
-                <div class="field-group">
-                  <label for="arco-folio">Folio Auditable ARCO</label>
-                  <input type="text" id="arco-folio" class="mono-input" value="ARCO-2026-0042" required />
-                </div>
-              </div>
-              <div class="field-group">
-                <label for="arco-reason">Justificación Legal / Operativa</label>
-                <input type="text" id="arco-reason" value="Ejercicio de derecho ARCO de Cancelación y Supresión (LFPDPPP)" required />
-              </div>
-              <div class="btn-row">
-                <button type="submit" class="btn btn-danger" id="btn-arco-submit">
-                  Ejecutar Sanitización NIST SP 800-88 y Emitir Certificado
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <!-- Automated TTL Scheduler & Manual Sweep (MB-01) -->
-          <div class="panel-card">
-            <div class="panel-card-header">
-              <h3>Retención Temporal Automatizada (TTL — MB-01)</h3>
-              <div class="btn-row">
-                <button type="button" class="btn btn-secondary btn-sm" id="btn-ttl-status">Estado TTL</button>
-                <button type="button" class="btn btn-primary btn-sm" id="btn-ttl-sweep">Ejecutar Barrido TTL Ahora</button>
-              </div>
-            </div>
-            <p class="panel-desc">Purga expedientes cuyo <code>ttl_expires_at</code> ha vencido y destruye tokens huérfanos en HashiCorp Vault.</p>
-            <pre class="code-output" id="ttl-output">Consulta el estado del planificador TTL o ejecuta un barrido inmediato (roles autorizados: auditor_arco o admin_sec).</pre>
-          </div>
-        </div>
-
-        <!-- Sanitization Certificates Table (MB-04) -->
-        <div class="panel-card">
-          <div class="panel-card-header">
-            <h3>Certificados de Sanitización Emitidos (JSON + PDF + Verificación SHA-256)</h3>
-            <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-certificates">
-              Actualizar Certificados (GET /lifecycle/certificates)
-            </button>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Certificado ID</th>
-                  <th>Token Titular</th>
-                  <th>Método NIST</th>
-                  <th>Registros / Vault</th>
-                  <th>Firma SHA-256</th>
-                  <th>Acciones y Descargas</th>
-                </tr>
-              </thead>
-              <tbody id="certificates-tbody">
-                <tr><td colspan="6">Autentícate como <code>auditor_arco</code> y haz clic en "Actualizar Certificados".</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- ====================================================================
-           LIVE AUDIT & RESPONSE INSPECTOR
-           ==================================================================== -->
-      <section class="panel-card" aria-label="Bitácora de respuestas HTTP">
-        <div class="panel-card-header">
-          <h3>Inspector Zero Trust &amp; Trazabilidad HTTP (`X-Request-ID`)</h3>
-          <span class="badge badge-info" id="last-request-meta">Listo</span>
-        </div>
-        <pre class="code-output" id="live-response-inspector">Aquí se mostrará la última respuesta cruda de la API junto con su código HTTP y cabecera X-Request-ID enviada a Syslog RFC 5424.</pre>
-      </section>
-    </main>
+          <pre class="code-output" id="live-response-inspector">Aquí se mostrará la última respuesta de la API junto con su código HTTP y cabecera X-Request-ID auditada por Syslog RFC 5424.</pre>
+        </section>
+      </main>
+    </div>
   </div>
 
   <script src="/ui/portal.js"></script>

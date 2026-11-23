@@ -1,19 +1,32 @@
 /* ============================================================================
    Hospital Privacy-by-Design & Zero Trust — Client Logic (Vanilla JS)
    BUAP FCC · Ingeniería en Ciberseguridad (ICSA 252)
-   Security: Strict DOM manipulation (textContent / createElement), zero eval/innerHTML
+   Security:
+   - Mandatory Zero Trust Authentication Gate (#auth-gate) before #app-shell
+   - Zero hardcoded credentials or unauthenticated quick-login backdoors
+   - Strict DOM manipulation (textContent / createElement), zero eval/innerHTML
+   - Automatic DOM sanitization and lock on logout or HTTP 401
    ============================================================================ */
 
 (function () {
   "use strict";
 
-  const DEMO_PASSWORD = "Hospital!2026#Secure";
-  const DEMO_PERSONAS = {
-    medico: { username: "dr_garcia", role: "medico", purpose: "atencion_medica" },
-    enfermeria: { username: "enf_martinez", role: "enfermeria", purpose: "atencion_medica" },
-    analista: { username: "ana_estadistica", role: "analista", purpose: "investigacion_estadistica" },
-    auditor_arco: { username: "aud_arco_buap", role: "auditor_arco", purpose: "ejercicio_arco" },
-    admin_sec: { username: "sec_ops_admin", role: "admin_sec", purpose: "mantenimiento_ttl" },
+  const ROLE_DEFAULT_PURPOSE = {
+    medico: "atencion_medica",
+    enfermeria: "atencion_medica",
+    analista: "investigacion_estadistica",
+    auditor_arco: "ejercicio_arco",
+    admin_sec: "mantenimiento_ttl",
+    paciente: "acceso_titular",
+  };
+
+  const ROLE_DESCRIPTIONS = {
+    medico: "Atención clínica completa: alta segregada en Vault+PostgreSQL, lectura/edición de expedientes y resolución PII bajo propósito atencion_medica.",
+    enfermeria: "Asistencia clínica minimizada: lectura restringida de departamento y resumen clínico con token opaco enmascarado (pat_xxxx...yyyy).",
+    analista: "Analítica poblacional: lecturas generalizadas (rango de edad, CP 2 dígitos) sin acceso individual y exportación HIPAA Safe Harbor + (k, l).",
+    auditor_arco: "Cumplimiento y auditoría: evaluación OPA, barrido TTL, borrado certificado ARCO/NIST SP 800-88 y descarga/verificación SHA-256 de certificados.",
+    admin_sec: "Operaciones de seguridad (SecOps): gestión de bóveda Vault, evaluación OPA y barrido TTL. Separación de funciones: acceso clínico bloqueado (403).",
+    paciente: "Acceso de titular: consulta exclusiva de sus propios registros bajo propósito acceso_titular.",
   };
 
   const DEMO_COHORT = [
@@ -121,7 +134,7 @@
     },
   ];
 
-  // State kept in memory only (Zero Trust: no permanent storage of clinical PII)
+  // Zero Trust: JWT kept strictly in memory (never in localStorage/sessionStorage)
   const state = {
     accessToken: null,
     user: null,
@@ -152,10 +165,23 @@
   }
 
   // --------------------------------------------------------------------------
-  // UI Helpers & Toast Notifications
+  // DOM & Notification Helpers
   // --------------------------------------------------------------------------
   function byId(id) {
     return document.getElementById(id);
+  }
+
+  function showGateToast(message, variant) {
+    const banner = byId("gate-toast");
+    const textNode = byId("gate-toast-text");
+    if (!banner || !textNode) return;
+    banner.className = "toast-banner toast-" + (variant || "err");
+    textNode.textContent = message;
+  }
+
+  function hideGateToast() {
+    const banner = byId("gate-toast");
+    if (banner) banner.className = "toast-banner hidden";
   }
 
   function showToast(message, variant) {
@@ -168,9 +194,7 @@
 
   function hideToast() {
     const banner = byId("global-toast");
-    if (banner) {
-      banner.className = "toast-banner hidden";
-    }
+    if (banner) banner.className = "toast-banner hidden";
   }
 
   function getSelectedPurpose() {
@@ -180,28 +204,7 @@
 
   function setSelectedPurpose(purposeValue) {
     const sel = byId("global-purpose-select");
-    if (sel) {
-      sel.value = purposeValue;
-    }
-  }
-
-  function updateSessionHeader() {
-    const dot = byId("session-dot");
-    const userLabel = byId("session-user-label");
-    const roleBadge = byId("session-role-badge");
-    const logoutBtn = byId("btn-top-logout");
-
-    if (state.accessToken && state.user) {
-      dot.className = "session-dot active";
-      userLabel.textContent = state.user.username + " (" + state.amr.join("+") + ")";
-      roleBadge.textContent = state.user.role;
-      logoutBtn.disabled = false;
-    } else {
-      dot.className = "session-dot";
-      userLabel.textContent = "Sin sesión activa";
-      roleBadge.textContent = "anónimo";
-      logoutBtn.disabled = true;
-    }
+    if (sel) sel.value = purposeValue;
   }
 
   function logInspector(method, path, status, reqId, payload) {
@@ -213,6 +216,104 @@
     }
     if (out) {
       out.textContent = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Zero Trust Gate Control: Lock / Unlock Workspace & Role-Based UI Filtering
+  // --------------------------------------------------------------------------
+  function applyRoleVisibility(role) {
+    const navButtons = document.querySelectorAll(".nav-btn");
+    navButtons.forEach(function (btn) {
+      const allowedRoles = (btn.getAttribute("data-roles") || "").split(",");
+      const allowed = allowedRoles.includes(role);
+      btn.classList.toggle("is-hidden", !allowed);
+    });
+
+    const scopeEl = byId("role-scope-summary");
+    if (scopeEl) {
+      scopeEl.textContent = ROLE_DESCRIPTIONS[role] || "Acceso gobernado por OPA/ABAC.";
+    }
+
+    // Role-specific operational panels
+    const isMedico = role === "medico";
+    const isAdmin = role === "admin_sec";
+    const isAuditor = role === "auditor_arco";
+
+    const cardSegregated = byId("card-segregated-admission");
+    if (cardSegregated) cardSegregated.classList.toggle("is-hidden", !isMedico);
+
+    const btnSeedCohort = byId("btn-seed-clinical-cohort");
+    if (btnSeedCohort) btnSeedCohort.classList.toggle("is-hidden", !isMedico);
+
+    const cardVault = byId("card-vault-inspector");
+    if (cardVault) cardVault.classList.toggle("is-hidden", !(isMedico || isAdmin || isAuditor));
+
+    const cardArco = byId("card-arco-erasure");
+    if (cardArco) cardArco.classList.toggle("is-hidden", !isAuditor);
+
+    const cardCerts = byId("card-certificates-list");
+    if (cardCerts) cardCerts.classList.toggle("is-hidden", !isAuditor);
+  }
+
+  function clearSensitiveDom() {
+    byId("auth-me-output").textContent = "";
+    byId("vault-inspector-output").textContent = "Sin operaciones activas.";
+    byId("opa-decision-output").textContent = "Sin evaluación activa.";
+    byId("export-metrics-output").textContent = "Sin exportación activa.";
+    byId("ttl-output").textContent = "Sin consulta TTL activa.";
+    byId("live-response-inspector").textContent = "Sesión cerrada.";
+    byId("clinical-records-tbody").replaceChildren();
+    byId("export-records-tbody").replaceChildren();
+    byId("certificates-tbody").replaceChildren();
+    byId("webauthn-creds-tbody").replaceChildren();
+    byId("policy-allowed-fields").replaceChildren();
+    byId("login-password").value = "";
+    byId("reg-password").value = "";
+  }
+
+  async function unlockWorkspace(tokenData) {
+    state.accessToken = tokenData.access_token;
+    state.user = tokenData.user;
+    state.amr = tokenData.amr || ["pwd"];
+
+    // Verify token directly against /auth/me before showing the application shell
+    const meRes = await apiRequest("GET", "/auth/me");
+    if (!meRes.ok) {
+      lockWorkspace("No se pudo verificar la sesión en /auth/me.");
+      return false;
+    }
+
+    hideGateToast();
+    byId("session-user-label").textContent = state.user.username + " (" + state.amr.join("+") + ")";
+    byId("session-role-badge").textContent = state.user.role;
+    setSelectedPurpose(ROLE_DEFAULT_PURPOSE[state.user.role] || "atencion_medica");
+    applyRoleVisibility(state.user.role);
+
+    byId("auth-gate").classList.add("is-hidden");
+    byId("app-shell").classList.remove("is-hidden");
+    switchTab("tab-auth");
+
+    byId("auth-me-output").textContent = JSON.stringify(meRes.data, null, 2);
+    await refreshTelemetry();
+    await refreshWebAuthnCredentials();
+    showToast(
+      "Identidad verificada: " + state.user.username + " [rol=" + state.user.role + ", amr=" + state.amr.join("+") + "]",
+      "ok"
+    );
+    return true;
+  }
+
+  function lockWorkspace(reasonMessage) {
+    state.accessToken = null;
+    state.user = null;
+    state.amr = [];
+    clearSensitiveDom();
+    hideToast();
+    byId("app-shell").classList.add("is-hidden");
+    byId("auth-gate").classList.remove("is-hidden");
+    if (reasonMessage) {
+      showGateToast(reasonMessage, "warn");
     }
   }
 
@@ -257,6 +358,12 @@
     }
 
     logInspector(method, path, response.status, reqId, data || { status: response.status });
+
+    // Zero Trust: if an authenticated call returns 401, immediately lock workspace
+    if (response.status === 401 && !opts.skipAuth && state.accessToken) {
+      lockWorkspace("Tu sesión JWT expiró o fue revocada. Autentícate nuevamente.");
+    }
+
     return {
       ok: response.ok,
       status: response.status,
@@ -266,15 +373,13 @@
   }
 
   // --------------------------------------------------------------------------
-  // Tab Navigation & SIEM Link Auto-Configure
+  // Navigation & Telemetry
   // --------------------------------------------------------------------------
   function switchTab(tabId) {
-    const buttons = document.querySelectorAll(".nav-btn");
-    buttons.forEach(function (btn) {
+    document.querySelectorAll(".nav-btn").forEach(function (btn) {
       btn.classList.toggle("active", btn.getAttribute("data-tab") === tabId);
     });
-    const panels = document.querySelectorAll(".tab-panel");
-    panels.forEach(function (panel) {
+    document.querySelectorAll(".tab-panel").forEach(function (panel) {
       panel.classList.toggle("active", panel.id === tabId);
     });
   }
@@ -290,9 +395,24 @@
     }
   }
 
-  // --------------------------------------------------------------------------
-  // Telemetry Strip (Health & Edge Check)
-  // --------------------------------------------------------------------------
+  async function refreshGateHealth() {
+    const pill = byId("gate-health-pill");
+    if (!pill) return;
+    try {
+      const resp = await fetch("/health");
+      if (resp.ok) {
+        pill.textContent = "API ONLINE";
+        pill.className = "badge badge-ok";
+      } else {
+        pill.textContent = "API ERROR";
+        pill.className = "badge badge-danger";
+      }
+    } catch (_err) {
+      pill.textContent = "OFFLINE";
+      pill.className = "badge badge-danger";
+    }
+  }
+
   async function refreshTelemetry() {
     try {
       const [healthResp, edgeResp] = await Promise.all([
@@ -325,7 +445,7 @@
   }
 
   // --------------------------------------------------------------------------
-  // TAB 1: Authentication (Argon2id + WebAuthn Passkeys + Quick Role Switcher)
+  // Authentication Flows (Argon2id + WebAuthn Passkeys + Logout)
   // --------------------------------------------------------------------------
   async function handlePasswordLogin(username, password) {
     const res = await apiRequest("POST", "/auth/login", {
@@ -334,126 +454,40 @@
     });
 
     if (!res.ok) {
-      showToast("Error de autenticación (" + res.status + "): " + (res.data && res.data.detail ? res.data.detail : "Credenciales inválidas"), "err");
+      const detail = res.data && res.data.detail ? res.data.detail : "Credenciales inválidas.";
+      showGateToast("Acceso denegado (HTTP " + res.status + "): " + detail, "err");
       return false;
     }
 
-    state.accessToken = res.data.access_token;
-    state.user = res.data.user;
-    state.amr = res.data.amr || ["pwd"];
-    updateSessionHeader();
-    await refreshCurrentUser();
-    await refreshWebAuthnCredentials();
-    showToast("Sesión iniciada como " + state.user.username + " [rol=" + state.user.role + "]", "ok");
-    return true;
-  }
-
-  async function refreshCurrentUser() {
-    const out = byId("auth-me-output");
-    if (!state.accessToken) {
-      out.textContent = "Sin sesión activa.";
-      return;
-    }
-    const res = await apiRequest("GET", "/auth/me");
-    if (res.ok) {
-      out.textContent = JSON.stringify(res.data, null, 2);
-    } else {
-      out.textContent = JSON.stringify(res.data, null, 2);
-    }
+    return unlockWorkspace(res.data);
   }
 
   async function handleLogout() {
-    if (!state.accessToken) return;
-    const res = await apiRequest("POST", "/auth/logout");
-    state.accessToken = null;
-    state.user = null;
-    state.amr = [];
-    updateSessionHeader();
-    byId("auth-me-output").textContent = "Sesión JWT revocada explícitamente (jti invalidado).";
+    if (state.accessToken) {
+      await apiRequest("POST", "/auth/logout");
+    }
+    lockWorkspace("Sesión cerrada y JWT revocado en el servidor (jti invalidado).");
+  }
+
+  async function refreshCurrentUser() {
+    const res = await apiRequest("GET", "/auth/me");
     if (res.ok) {
-      showToast("Sesión JWT revocada en lista negra Zero Trust (jti=" + res.data.jti + ")", "ok");
+      byId("auth-me-output").textContent = JSON.stringify(res.data, null, 2);
+      showToast("Sesión JWT activa y verificada en /auth/me.", "ok");
     }
   }
 
-  async function ensurePersonaAndLogin(roleKey, customPurpose) {
-    const persona = DEMO_PERSONAS[roleKey] || DEMO_PERSONAS.medico;
-    setSelectedPurpose(customPurpose !== undefined ? customPurpose : persona.purpose);
-
-    // Try login first; if 401, auto-register the demo user and login
-    let res = await apiRequest("POST", "/auth/login", {
-      json: { username: persona.username, password: DEMO_PASSWORD },
-      skipAuth: true,
-    });
-
-    if (res.status === 401) {
-      await apiRequest("POST", "/auth/register", {
-        json: {
-          username: persona.username,
-          password: DEMO_PASSWORD,
-          role: persona.role,
-        },
-        skipAuth: true,
-      });
-      res = await apiRequest("POST", "/auth/login", {
-        json: { username: persona.username, password: DEMO_PASSWORD },
-        skipAuth: true,
-      });
-    }
-
-    if (res.ok) {
-      state.accessToken = res.data.access_token;
-      state.user = res.data.user;
-      state.amr = res.data.amr || ["pwd"];
-      byId("login-username").value = persona.username;
-      updateSessionHeader();
-      await refreshCurrentUser();
-      await refreshWebAuthnCredentials();
-      showToast(
-        "Rol activo: " + state.user.role + " (" + state.user.username + ") | X-Purpose: " + (getSelectedPurpose() || "VACÍO"),
-        customPurpose === "marketing_comercial" ? "warn" : "ok"
-      );
-      if (byId("tab-clinical").classList.contains("active")) {
-        await loadClinicalRecords();
-      }
-    } else {
-      showToast("No fue posible activar el usuario demo " + persona.username + " (verifica que PostgreSQL esté activo).", "err");
-    }
-  }
-
-  async function seedAllDemoUsers() {
-    let createdCount = 0;
-    const keys = Object.keys(DEMO_PERSONAS);
-    for (let i = 0; i < keys.length; i++) {
-      const p = DEMO_PERSONAS[keys[i]];
-      const res = await apiRequest("POST", "/auth/register", {
-        json: { username: p.username, password: DEMO_PASSWORD, role: p.role },
-        skipAuth: true,
-      });
-      if (res.status === 201) createdCount++;
-    }
-    showToast("Inicialización de roles demo completada (" + createdCount + " nuevos, 5 disponibles).", "ok");
-  }
-
-  // WebAuthn Passkeys Registration & Login
   async function refreshWebAuthnCredentials() {
     const tbody = byId("webauthn-creds-tbody");
     tbody.replaceChildren();
-    if (!state.accessToken) {
-      const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.colSpan = 4;
-      td.textContent = "Autentícate para consultar tus Passkeys FIDO2 registradas.";
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-      return;
-    }
+    if (!state.accessToken) return;
 
     const res = await apiRequest("GET", "/auth/webauthn/credentials");
     if (!res.ok || !Array.isArray(res.data) || res.data.length === 0) {
       const tr = document.createElement("tr");
       const td = document.createElement("td");
       td.colSpan = 4;
-      td.textContent = "Sin Passkeys FIDO2 registradas para este usuario.";
+      td.textContent = "No tienes Passkeys FIDO2 registradas todavía.";
       tr.appendChild(td);
       tbody.appendChild(tr);
       return;
@@ -496,10 +530,6 @@
   }
 
   async function registerWebAuthnPasskey() {
-    if (!state.accessToken) {
-      showToast("Inicia sesión con Argon2id primero para vincular una Passkey FIDO2.", "warn");
-      return;
-    }
     if (!window.PublicKeyCredential || !navigator.credentials) {
       showToast("Tu navegador o contexto actual no soporta WebAuthn (requiere HTTPS o localhost).", "err");
       return;
@@ -544,18 +574,18 @@
         showToast("Fallo al verificar Passkey: " + (completeRes.data.detail || "Error"), "err");
       }
     } catch (err) {
-      showToast("Operación WebAuthn cancelada o rechazada por el navegador: " + err.message, "warn");
+      showToast("Operación WebAuthn cancelada: " + err.message, "warn");
     }
   }
 
   async function loginWithWebAuthnPasskey() {
     const username = byId("login-username").value.trim();
     if (!username) {
-      showToast("Ingresa tu nombre de usuario para solicitar el reto FIDO2.", "warn");
+      showGateToast("Ingresa tu nombre de usuario para solicitar el reto FIDO2.", "warn");
       return;
     }
     if (!window.PublicKeyCredential || !navigator.credentials) {
-      showToast("WebAuthn no disponible en este contexto (usa HTTPS o localhost).", "err");
+      showGateToast("WebAuthn no disponible en este contexto (requiere HTTPS o localhost).", "err");
       return;
     }
 
@@ -564,7 +594,7 @@
       skipAuth: true,
     });
     if (!beginRes.ok) {
-      showToast(beginRes.data && beginRes.data.detail ? beginRes.data.detail : "Sin Passkeys para este usuario.", "warn");
+      showGateToast(beginRes.data && beginRes.data.detail ? beginRes.data.detail : "Sin Passkeys para este usuario.", "warn");
       return;
     }
 
@@ -599,18 +629,12 @@
       });
 
       if (completeRes.ok) {
-        state.accessToken = completeRes.data.access_token;
-        state.user = completeRes.data.user;
-        state.amr = completeRes.data.amr || ["webauthn", "fido2"];
-        updateSessionHeader();
-        await refreshCurrentUser();
-        await refreshWebAuthnCredentials();
-        showToast("Autenticado vía FIDO2/WebAuthn Passkey (amr=webauthn+fido2).", "ok");
+        await unlockWorkspace(completeRes.data);
       } else {
-        showToast("Fallo en verificación FIDO2: " + (completeRes.data.detail || "Rechazado"), "err");
+        showGateToast("Fallo en verificación FIDO2: " + (completeRes.data.detail || "Rechazado"), "err");
       }
     } catch (err) {
-      showToast("Autenticación FIDO2 cancelada: " + err.message, "warn");
+      showGateToast("Autenticación FIDO2 cancelada: " + err.message, "warn");
     }
   }
 
@@ -698,7 +722,7 @@
       btnWrap.className = "btn-row";
       btnWrap.style.marginTop = "0";
 
-      if (rec.record_id) {
+      if (rec.record_id && state.user && state.user.role === "medico") {
         const btnPii = document.createElement("button");
         btnPii.type = "button";
         btnPii.className = "btn btn-secondary btn-sm";
@@ -709,14 +733,13 @@
         btnWrap.appendChild(btnPii);
       }
 
-      if (rec.opaque_patient_token && !String(rec.opaque_patient_token).includes("...")) {
+      if (rec.opaque_patient_token && !String(rec.opaque_patient_token).includes("...") && state.user && state.user.role === "auditor_arco") {
         const btnArco = document.createElement("button");
         btnArco.type = "button";
         btnArco.className = "btn btn-danger btn-sm";
         btnArco.textContent = "Enviar a ARCO";
         btnArco.addEventListener("click", function () {
           byId("arco-token").value = rec.opaque_patient_token;
-          byId("vault-inspect-token").value = rec.opaque_patient_token;
           switchTab("tab-arco");
           showToast("Token " + rec.opaque_patient_token + " cargado en el formulario de Borrado ARCO NIST SP 800-88.", "ok");
         });
@@ -758,8 +781,7 @@
       byId("vault-inspect-token").value = tokenHint;
     }
     const res = await apiRequest("GET", "/clinical/records/" + encodeURIComponent(recordId) + "/patient-identity");
-    const out = byId("vault-inspector-output");
-    out.textContent = JSON.stringify(res.data, null, 2);
+    byId("vault-inspector-output").textContent = JSON.stringify(res.data, null, 2);
     if (res.ok) {
       showToast("PII detokenizada desde HashiCorp Vault con doble control OPA + Vault.", "ok");
     } else {
@@ -768,24 +790,23 @@
   }
 
   async function seedClinicalCohort() {
-    if (!state.accessToken || !state.user || state.user.role !== "medico" || getSelectedPurpose() !== "atencion_medica") {
-      await ensurePersonaAndLogin("medico", "atencion_medica");
-    }
     let created = 0;
     for (let i = 0; i < DEMO_COHORT.length; i++) {
-      const item = DEMO_COHORT[i];
       const res = await apiRequest("POST", "/clinical/records/segregated", {
-        json: item,
+        json: DEMO_COHORT[i],
         purpose: "atencion_medica",
       });
       if (res.status === 201) {
         created++;
         byId("vault-inspect-token").value = res.data.opaque_patient_token;
-        byId("arco-token").value = res.data.opaque_patient_token;
       }
     }
-    showToast("Cohorte clínica de " + created + " pacientes creada (PII aislada en Vault + atributos en PostgreSQL).", "ok");
-    await loadClinicalRecords();
+    if (created > 0) {
+      showToast("Cohorte clínica de " + created + " pacientes creada (PII aislada en Vault + atributos en PostgreSQL).", "ok");
+      await loadClinicalRecords();
+    } else {
+      showToast("No se pudo crear la cohorte (verifica rol medico y propósito atencion_medica).", "warn");
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -819,7 +840,6 @@
     } else {
       badge.textContent = "HTTP " + res.status;
       badge.className = "badge badge-warn";
-      showToast("Para usar /clinical/policy/evaluate cambia al rol auditor_arco o admin_sec en la barra lateral.", "warn");
     }
   }
 
@@ -833,11 +853,7 @@
     const supVal = parseFloat(byId("exp-suppression").value) || 0.25;
     const deptVal = byId("exp-dept").value.trim() || null;
 
-    const payload = {
-      k: kVal,
-      l: lVal,
-      suppression_limit: supVal,
-    };
+    const payload = { k: kVal, l: lVal, suppression_limit: supVal };
     if (deptVal) payload.department = deptVal;
 
     const res = await apiRequest("POST", "/lifecycle/exports/anonymized", { json: payload });
@@ -857,10 +873,7 @@
     badge.textContent = "k=" + res.data.metrics.achieved_k + " | l=" + res.data.metrics.achieved_l + " | Nivel " + res.data.metrics.generalization_level;
     badge.className = "badge badge-ok";
     out.textContent = JSON.stringify(
-      {
-        metrics: res.data.metrics,
-        equivalence_classes: res.data.equivalence_classes,
-      },
+      { metrics: res.data.metrics, equivalence_classes: res.data.equivalence_classes },
       null,
       2
     );
@@ -879,25 +892,22 @@
     showToast(
       "Exportación Safe Harbor completada: " +
         res.data.metrics.exported_records_count +
-        " registros con k=" +
+        " registros (k=" +
         res.data.metrics.achieved_k +
         ", l=" +
-        res.data.metrics.achieved_l,
+        res.data.metrics.achieved_l +
+        ").",
       "ok"
     );
   }
 
   async function handleAnonymizedExportCsv() {
-    const kVal = parseInt(byId("exp-k").value, 10) || 2;
-    const lVal = parseInt(byId("exp-l").value, 10) || 2;
-    const supVal = parseFloat(byId("exp-suppression").value) || 0.25;
-    const deptVal = byId("exp-dept").value.trim();
-
     const params = new URLSearchParams({
-      k: String(kVal),
-      l: String(lVal),
-      suppression_limit: String(supVal),
+      k: String(parseInt(byId("exp-k").value, 10) || 2),
+      l: String(parseInt(byId("exp-l").value, 10) || 2),
+      suppression_limit: String(parseFloat(byId("exp-suppression").value) || 0.25),
     });
+    const deptVal = byId("exp-dept").value.trim();
     if (deptVal) params.set("department", deptVal);
 
     const res = await apiRequest("GET", "/lifecycle/exports/anonymized.csv?" + params.toString());
@@ -923,17 +933,12 @@
   // --------------------------------------------------------------------------
   async function handleArcoErasure(ev) {
     ev.preventDefault();
-    const token = byId("arco-token").value.trim();
-    const method = byId("arco-method").value;
-    const folio = byId("arco-folio").value.trim();
-    const reason = byId("arco-reason").value.trim();
-
     const res = await apiRequest("POST", "/lifecycle/arco/erasure", {
       json: {
-        opaque_patient_token: token,
-        method: method,
-        arco_request_folio: folio,
-        reason: reason,
+        opaque_patient_token: byId("arco-token").value.trim(),
+        method: byId("arco-method").value,
+        arco_request_folio: byId("arco-folio").value.trim(),
+        reason: byId("arco-reason").value.trim(),
         purge_vault: true,
       },
     });
@@ -988,7 +993,7 @@
       const tr = document.createElement("tr");
       const td = document.createElement("td");
       td.colSpan = 6;
-      td.textContent = "Acceso restringido (HTTP " + res.status + "): requiere rol auditor_arco con propósito ejercicio_arco.";
+      td.textContent = "Acceso restringido (HTTP " + res.status + ").";
       tr.appendChild(td);
       tbody.appendChild(tr);
       return;
@@ -1045,9 +1050,9 @@
       btnVerify.addEventListener("click", async function () {
         const vRes = await apiRequest("GET", cert.verify_url);
         if (vRes.ok && vRes.data.valid) {
-          showToast("Integridad SHA-256 VERIFICADA (hmac.compare_digest válido): " + vRes.data.stored_sha256, "ok");
+          showToast("Integridad SHA-256 VERIFICADA: " + vRes.data.stored_sha256, "ok");
         } else {
-          showToast("ALERTA: Integridad del certificado comprometida o error de verificación.", "err");
+          showToast("ALERTA: Integridad del certificado comprometida.", "err");
         }
       });
       rowBtns.appendChild(btnVerify);
@@ -1081,38 +1086,39 @@
   // --------------------------------------------------------------------------
   document.addEventListener("DOMContentLoaded", function () {
     configureSiemLink();
-    refreshTelemetry();
+    refreshGateHealth();
 
-    byId("global-toast-close").addEventListener("click", hideToast);
-    byId("btn-top-logout").addEventListener("click", handleLogout);
+    // Gate Login / Register tab switching
+    const tabLoginBtn = byId("gate-tab-login");
+    const tabRegBtn = byId("gate-tab-register");
+    const formLogin = byId("form-login");
+    const formRegister = byId("form-register");
 
-    // Sidebar tab buttons
-    document.querySelectorAll(".nav-btn").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        switchTab(btn.getAttribute("data-tab"));
-      });
+    tabLoginBtn.addEventListener("click", function () {
+      tabLoginBtn.classList.add("active");
+      tabRegBtn.classList.remove("active");
+      formLogin.classList.remove("is-hidden");
+      formRegister.classList.add("is-hidden");
+      hideGateToast();
     });
 
-    // Quick Persona Role Switcher buttons
-    document.querySelectorAll(".persona-btn").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        const role = btn.getAttribute("data-role");
-        const purpose = btn.getAttribute("data-purpose");
-        ensurePersonaAndLogin(role, purpose);
-      });
+    tabRegBtn.addEventListener("click", function () {
+      tabRegBtn.classList.add("active");
+      tabLoginBtn.classList.remove("active");
+      formRegister.classList.remove("is-hidden");
+      formLogin.classList.add("is-hidden");
+      hideGateToast();
     });
 
-    // Tab 1: Auth forms
-    byId("btn-seed-demo-users").addEventListener("click", seedAllDemoUsers);
-    byId("form-login").addEventListener("submit", function (ev) {
+    // Gate Authentication Handlers
+    formLogin.addEventListener("submit", function (ev) {
       ev.preventDefault();
       handlePasswordLogin(byId("login-username").value.trim(), byId("login-password").value);
     });
-    byId("btn-webauthn-login").addEventListener("click", loginWithWebAuthnPasskey);
-    byId("btn-webauthn-register").addEventListener("click", registerWebAuthnPasskey);
-    byId("btn-refresh-me").addEventListener("click", refreshCurrentUser);
 
-    byId("form-register").addEventListener("submit", async function (ev) {
+    byId("btn-webauthn-login").addEventListener("click", loginWithWebAuthnPasskey);
+
+    formRegister.addEventListener("submit", async function (ev) {
       ev.preventDefault();
       const u = byId("reg-username").value.trim();
       const r = byId("reg-role").value;
@@ -1122,12 +1128,25 @@
         json: { username: u, role: r, password: p },
       });
       if (res.status === 201) {
-        showToast("Usuario " + u + " registrado con rol " + r + ". Iniciando sesión...", "ok");
         await handlePasswordLogin(u, p);
       } else {
-        showToast("Error al registrar (" + res.status + "): " + JSON.stringify(res.data.detail || res.data), "err");
+        const msg = res.data && res.data.detail ? JSON.stringify(res.data.detail) : "Error de validación";
+        showGateToast("No se pudo crear la cuenta (" + res.status + "): " + msg, "err");
       }
     });
+
+    // Authenticated Workspace Handlers
+    byId("global-toast-close").addEventListener("click", hideToast);
+    byId("btn-top-logout").addEventListener("click", handleLogout);
+
+    document.querySelectorAll(".nav-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        switchTab(btn.getAttribute("data-tab"));
+      });
+    });
+
+    byId("btn-webauthn-register").addEventListener("click", registerWebAuthnPasskey);
+    byId("btn-refresh-me").addEventListener("click", refreshCurrentUser);
 
     // Tab 2: Clinical & Vault
     byId("btn-seed-clinical-cohort").addEventListener("click", seedClinicalCohort);
@@ -1145,9 +1164,7 @@
         department: byId("clin-dept").value,
         purpose_scope: "atencion_medica",
       };
-      if (ttlRaw) {
-        clinicalData.ttl_hours = parseInt(ttlRaw, 10);
-      }
+      if (ttlRaw) clinicalData.ttl_hours = parseInt(ttlRaw, 10);
 
       const payload = {
         patient_pii: {
@@ -1162,7 +1179,6 @@
       const res = await apiRequest("POST", "/clinical/records/segregated", { json: payload });
       if (res.status === 201) {
         byId("vault-inspect-token").value = res.data.opaque_patient_token;
-        byId("arco-token").value = res.data.opaque_patient_token;
         byId("vault-inspector-output").textContent = JSON.stringify(res.data, null, 2);
         showToast("Expediente segregado creado. Token opaco Vault: " + res.data.opaque_patient_token, "ok");
         await loadClinicalRecords();
@@ -1220,8 +1236,6 @@
       if (res.ok) {
         byId("tel-opa-ver").textContent = "v" + (res.data.policy_version || "1.1.0");
         showToast("Motor OPA saludable y política hospital.authz cargada.", "ok");
-      } else {
-        showToast("Para consultar /clinical/policy/status activa el rol auditor_arco o admin_sec.", "warn");
       }
     });
 
@@ -1264,11 +1278,7 @@
     byId("btn-ttl-status").addEventListener("click", async function () {
       const res = await apiRequest("GET", "/lifecycle/ttl/status");
       byId("ttl-output").textContent = JSON.stringify(res.data, null, 2);
-      if (res.ok) {
-        showToast("Estado del planificador TTL consultado.", "ok");
-      } else {
-        showToast("Requiere rol auditor_arco o admin_sec.", "warn");
-      }
+      if (res.ok) showToast("Estado del planificador TTL consultado.", "ok");
     });
 
     byId("btn-ttl-sweep").addEventListener("click", async function () {
@@ -1277,7 +1287,7 @@
       if (res.ok) {
         showToast("Barrido TTL completado: " + res.data.purged_records_count + " registros purgados.", "ok");
       } else {
-        showToast("Para ejecutar barrido TTL usa rol admin_sec (mantenimiento_ttl) o auditor_arco (ejercicio_arco).", "warn");
+        showToast("Verifica tu propósito X-Purpose (mantenimiento_ttl o ejercicio_arco).", "warn");
       }
     });
   });

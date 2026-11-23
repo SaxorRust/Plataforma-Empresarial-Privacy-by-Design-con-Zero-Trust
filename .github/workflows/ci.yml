@@ -64,10 +64,11 @@ jobs:
       - name: Checkout del repositorio
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Validar sintaxis de docker-compose.yml
+      - name: Validar sintaxis de docker-compose.yml y override AppArmor
         run: |
           cp .env.example .env
           docker compose config -q
+          docker compose -f docker-compose.yml -f docker-compose.apparmor.yml config -q
 
       - name: Validar sintaxis estricta de políticas Rego (OPA)
         run: |
@@ -78,6 +79,37 @@ jobs:
         run: |
           docker run --rm -v "${{ github.workspace }}/infra/opa/policies:/policies:ro" \
             openpolicyagent/opa:latest-static test /policies -v
+
+      - name: Validar perfil Seccomp-BPF y compilar sintaxis AppArmor (MC-01)
+        run: |
+          jq empty infra/seccomp/api-seccomp.json
+          sudo apparmor_parser -Q -K infra/apparmor/zt-hospital-api
+
+      - name: Prueba negativa de confinamiento Seccomp-BPF en contenedor Docker (MC-01)
+        run: |
+          docker run --rm \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --security-opt seccomp="${{ github.workspace }}/infra/seccomp/api-seccomp.json" \
+            python:3.11-slim-bookworm \
+            python3 -c "
+          import ctypes, errno, os, socket
+          try:
+              os.fork()
+              raise SystemExit('ERROR: os.fork() no fue bloqueado')
+          except PermissionError as exc:
+              assert exc.errno == errno.EPERM
+          try:
+              socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+              raise SystemExit('ERROR: AF_PACKET no fue bloqueado')
+          except PermissionError as exc:
+              assert exc.errno == errno.EPERM
+          libc = ctypes.CDLL(None, use_errno=True)
+          assert libc.unshare(0x10000000) == -1 and ctypes.get_errno() == errno.EPERM
+          assert libc.ptrace(0, 0, 0, 0) == -1 and ctypes.get_errno() == errno.EPERM
+          print('Seccomp-BPF negative checks PASSED (EPERM)')
+          "
 
       - name: Validar sintaxis y análisis estático (ShellCheck) de scripts Bash
         run: |

@@ -1,0 +1,142 @@
+#include <tunables/global>
+
+# ==============================================================================
+# Perfil AppArmor Zero Trust para `zt-hospital-api` (Módulo C — MC-01)
+# - Confinamiento de sistema de archivos: lectura restringida a `/app` y runtime
+#   Python; escritura restringida exclusivamente a `/tmp`.
+# - Bloqueo explícito de ejecución de shells y utilidades ofensivas (`/bin/**`,
+#   `/usr/bin/sh`, `bash`, `dash`, `curl`, `wget`, `nc`).
+# - Bloqueo de montaje, ptrace, capacidades Linux y archivos sensibles del sistema.
+#
+# Instalación en Ubuntu Server 26.04.1 LTS:
+#   sudo ./infra/scripts/install-apparmor-profile.sh
+# ==============================================================================
+profile zt-hospital-api flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  # Red controlada hacia Postgres, Vault, OPA y SIEM dentro de redes Docker internas
+  network inet stream,
+  network inet dgram,
+  network inet6 stream,
+  network inet6 dgram,
+  network unix stream,
+  network unix dgram,
+
+  # Sockets UNIX internos (socketpair de uvloop/asyncio en AppArmor 4.0 / Ubuntu 26.04)
+  unix (create, bind, listen, accept, connect, send, receive, getattr, setattr, getopt, setopt, shutdown),
+
+  # Señales internas del proceso (cierre limpio de Uvicorn)
+  signal (receive) set=(term, int, hup, usr1, usr2, kill) peer=unconfined,
+  signal (send, receive) peer=zt-hospital-api,
+
+  # Ejecución estrictamente limitada al intérprete Python y entrypoint Uvicorn
+  /usr/local/bin/ r,
+  /usr/local/bin/python3.11 rix,
+  /usr/local/bin/python3 rix,
+  /usr/local/bin/python rix,
+  /usr/local/bin/uvicorn rix,
+
+  # Código de aplicación en modo solo lectura
+  /app/ r,
+  /app/** r,
+
+  # Directorios y bibliotecas compartidas del runtime Python 3.11 y dependencias
+  /usr/local/lib/ r,
+  /usr/local/lib/python3.11/ r,
+  /usr/local/lib/python3.11/** r,
+  /usr/local/lib/python3.11/**/*.so mr,
+  /usr/local/lib/python3.11/**/*.so.* mr,
+  /usr/local/lib/libpython3.11.so* mr,
+  /lib/ r,
+  /lib/** r,
+  /lib/**/*.so* mr,
+  /usr/lib/ r,
+  /usr/lib/** r,
+  /usr/lib/**/*.so* mr,
+
+  # Espacio temporal acotado (tmpfs noexec,nosuid)
+  /tmp/ rw,
+  /tmp/** rw,
+
+  # Configuración mínima de red, resolución UID/GID, zona horaria y certificados TLS
+  /etc/passwd r,
+  /etc/group r,
+  /etc/hosts r,
+  /etc/resolv.conf r,
+  /etc/nsswitch.conf r,
+  /etc/gai.conf r,
+  /etc/protocols r,
+  /etc/services r,
+  /etc/mime.types r,
+  /etc/ld.so.cache r,
+  /etc/ld.so.preload r,
+  /etc/localtime r,
+  /etc/ssl/ r,
+  /etc/ssl/** r,
+  /usr/share/ r,
+  /usr/share/ca-certificates/ r,
+  /usr/share/ca-certificates/** r,
+  /usr/share/zoneinfo/ r,
+  /usr/share/zoneinfo/** r,
+
+  # Dispositivos mínimos de entropía y salida estándar
+  /dev/null rw,
+  /dev/zero r,
+  /dev/urandom r,
+  /dev/random r,
+
+  # Metadatos propios en /proc y /sys necesarios para runtime Python/uvloop/Argon2id
+  @{PROC}/@{pid}/ r,
+  @{PROC}/@{pid}/fd/ r,
+  @{PROC}/@{pid}/fd/** rw,
+  @{PROC}/@{pid}/stat r,
+  @{PROC}/@{pid}/status r,
+  @{PROC}/@{pid}/cmdline r,
+  @{PROC}/@{pid}/maps r,
+  @{PROC}/@{pid}/limits r,
+  @{PROC}/@{pid}/auxv r,
+  @{PROC}/@{pid}/cgroup r,
+  @{PROC}/@{pid}/mountinfo r,
+  @{PROC}/cpuinfo r,
+  @{PROC}/meminfo r,
+  @{PROC}/sys/net/core/somaxconn r,
+  @{PROC}/sys/crypto/fips_enabled r,
+  /sys/devices/system/cpu/ r,
+  /sys/devices/system/cpu/** r,
+  /sys/fs/cgroup/** r,
+
+  # ----------------------------------------------------------------------------
+  # Reglas explícitas de denegación (Zero Trust / Principio de Menor Privilegio)
+  # ----------------------------------------------------------------------------
+  deny capability,
+  deny mount,
+  deny remount,
+  deny umount,
+  deny pivot_root,
+  deny ptrace,
+
+  # Impedir ejecución de shells, intérpretes externos o binarios de exfiltración
+  deny /bin/** x,
+  deny /sbin/** x,
+  deny /usr/sbin/** x,
+  deny /usr/bin/sh x,
+  deny /usr/bin/dash x,
+  deny /usr/bin/bash x,
+  deny /usr/bin/curl x,
+  deny /usr/bin/wget x,
+  deny /usr/bin/nc x,
+  deny /usr/bin/ncat x,
+  deny /tmp/** x,
+
+  # Proteger rutas sensibles del sistema y escritura fuera de /tmp
+  deny /app/** w,
+  deny /etc/shadow rwx,
+  deny /etc/gshadow rwx,
+  deny /etc/passwd w,
+  deny /etc/group w,
+  deny /root/** rwx,
+  deny /home/** rwx,
+  deny @{PROC}/kcore r,
+  deny @{PROC}/sys/** w,
+  deny @{PROC}/sysrq-trigger rw,
+}

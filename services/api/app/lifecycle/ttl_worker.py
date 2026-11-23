@@ -100,8 +100,7 @@ class TTLSweepService:
                     continue
                 except VaultServiceError as exc:
                     logger.warning(
-                        "TTL sweep no pudo purgar token %s en Vault (se reintentará): %s",
-                        token[:8],
+                        "TTL sweep no pudo purgar un registro en Vault (se reintentará): %s",
                         exc,
                     )
         except Exception as exc:

@@ -8,6 +8,8 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "America/Mexico_City"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -23,6 +25,8 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "America/Mexico_City"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
@@ -38,6 +42,8 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "America/Mexico_City"
+    cooldown:
+      default-days: 7
     labels:
       - "dependencies"
       - "docker"
@@ -53,6 +59,8 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "America/Mexico_City"
+    cooldown:
+      default-days: 7
     labels:
       - "dependencies"
       - "docker"
@@ -68,6 +76,8 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "America/Mexico_City"
+    cooldown:
+      default-days: 7
     labels:
       - "dependencies"
       - "docker"
@@ -83,6 +93,8 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "America/Mexico_City"
+    cooldown:
+      default-days: 7
     labels:
       - "dependencies"
       - "ci"

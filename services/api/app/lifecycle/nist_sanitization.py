@@ -40,7 +40,8 @@ def secure_zero_buffer(buffer: bytearray, *, passes: int = 2) -> int:
         buffer[idx] = 0xFF
     for idx in range(length):
         buffer[idx] = 0x00
-    assert all(b == 0 for b in buffer)
+    if not all(b == 0 for b in buffer):
+        raise RuntimeError("Fallo crítico al sobrescribir buffer de memoria con ceros.")
     return 1
 
 

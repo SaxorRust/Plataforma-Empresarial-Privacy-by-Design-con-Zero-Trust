@@ -304,12 +304,6 @@ class InMemoryClinicalRecordRepository:
 class PostgresClinicalRecordRepository:
     """Repositorio PostgreSQL sobre `clinical.medical_records` (red aislada `data_net`)."""
 
-    _COLUMNS = (
-        "record_id, opaque_patient_token, age_years, zip_prefix, gender, "
-        "diagnosis_cie10, diagnosis_summary, department, purpose_scope, "
-        "ttl_expires_at, is_sanitized, created_at"
-    )
-
     def __init__(self, dsn: str, connect_timeout: int = 5) -> None:
         self._dsn = dsn
         self._connect_timeout = connect_timeout
@@ -357,14 +351,16 @@ class PostgresClinicalRecordRepository:
             with self._connect() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f"""
+                        """
                         INSERT INTO clinical.medical_records (
                             record_id, opaque_patient_token, age_years, zip_prefix, gender,
                             diagnosis_cie10, diagnosis_summary, department, purpose_scope,
                             ttl_expires_at
                         )
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        RETURNING {self._COLUMNS}
+                        RETURNING record_id, opaque_patient_token, age_years, zip_prefix, gender,
+                                  diagnosis_cie10, diagnosis_summary, department, purpose_scope,
+                                  ttl_expires_at, is_sanitized, created_at
                         """,
                         (
                             record_id,
@@ -386,7 +382,8 @@ class PostgresClinicalRecordRepository:
                 "Error de conexión al persistir expediente clínico."
             ) from exc
 
-        assert row is not None
+        if row is None:
+            raise RuntimeError("PostgreSQL no devolvió la fila del expediente insertado.")
         return self._row_to_entity(row)
 
     def get_record_by_id(self, record_id: UUID) -> MedicalRecordEntity | None:
@@ -394,8 +391,10 @@ class PostgresClinicalRecordRepository:
             with self._connect() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f"""
-                        SELECT {self._COLUMNS}
+                        """
+                        SELECT record_id, opaque_patient_token, age_years, zip_prefix, gender,
+                               diagnosis_cie10, diagnosis_summary, department, purpose_scope,
+                               ttl_expires_at, is_sanitized, created_at
                         FROM clinical.medical_records
                         WHERE record_id = %s
                         """,
@@ -416,30 +415,28 @@ class PostgresClinicalRecordRepository:
         opaque_patient_token: str | None = None,
         include_sanitized: bool = False,
     ) -> list[MedicalRecordEntity]:
-        clauses: list[str] = []
-        params: list[object] = []
-
-        if not include_sanitized:
-            clauses.append("is_sanitized = FALSE")
-        if department is not None:
-            clauses.append("department = %s")
-            params.append(department.lower())
-        if opaque_patient_token is not None:
-            clauses.append("opaque_patient_token = %s")
-            params.append(opaque_patient_token)
-
-        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        dept_filter = department.lower() if department is not None else None
         try:
             with self._connect() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f"""
-                        SELECT {self._COLUMNS}
+                        """
+                        SELECT record_id, opaque_patient_token, age_years, zip_prefix, gender,
+                               diagnosis_cie10, diagnosis_summary, department, purpose_scope,
+                               ttl_expires_at, is_sanitized, created_at
                         FROM clinical.medical_records
-                        {where_sql}
+                        WHERE (%s::boolean OR is_sanitized = FALSE)
+                          AND (%s::varchar IS NULL OR department = %s)
+                          AND (%s::varchar IS NULL OR opaque_patient_token = %s)
                         ORDER BY created_at DESC
                         """,
-                        params,
+                        (
+                            include_sanitized,
+                            dept_filter,
+                            dept_filter,
+                            opaque_patient_token,
+                            opaque_patient_token,
+                        ),
                     )
                     rows = cur.fetchall()
         except psycopg.OperationalError as exc:
@@ -458,37 +455,36 @@ class PostgresClinicalRecordRepository:
         department: str | None = None,
         ttl_expires_at: datetime | None = None,
     ) -> MedicalRecordEntity | None:
-        assignments: list[str] = []
-        params: list[object] = []
-
-        if diagnosis_cie10 is not None:
-            assignments.append("diagnosis_cie10 = %s")
-            params.append(diagnosis_cie10)
-        if diagnosis_summary is not None:
-            assignments.append("diagnosis_summary = %s")
-            params.append(diagnosis_summary)
-        if department is not None:
-            assignments.append("department = %s")
-            params.append(department)
-        if ttl_expires_at is not None:
-            assignments.append("ttl_expires_at = %s")
-            params.append(ttl_expires_at)
-
-        if not assignments:
+        if (
+            diagnosis_cie10 is None
+            and diagnosis_summary is None
+            and department is None
+            and ttl_expires_at is None
+        ):
             return self.get_record_by_id(record_id)
 
-        params.append(record_id)
         try:
             with self._connect() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f"""
+                        """
                         UPDATE clinical.medical_records
-                        SET {', '.join(assignments)}
+                        SET diagnosis_cie10 = COALESCE(%s, diagnosis_cie10),
+                            diagnosis_summary = COALESCE(%s, diagnosis_summary),
+                            department = COALESCE(%s, department),
+                            ttl_expires_at = COALESCE(%s, ttl_expires_at)
                         WHERE record_id = %s
-                        RETURNING {self._COLUMNS}
+                        RETURNING record_id, opaque_patient_token, age_years, zip_prefix, gender,
+                                  diagnosis_cie10, diagnosis_summary, department, purpose_scope,
+                                  ttl_expires_at, is_sanitized, created_at
                         """,
-                        params,
+                        (
+                            diagnosis_cie10,
+                            diagnosis_summary,
+                            department,
+                            ttl_expires_at,
+                            record_id,
+                        ),
                     )
                     row = cur.fetchone()
                 conn.commit()
@@ -504,8 +500,10 @@ class PostgresClinicalRecordRepository:
             with self._connect() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f"""
-                        SELECT {self._COLUMNS}
+                        """
+                        SELECT record_id, opaque_patient_token, age_years, zip_prefix, gender,
+                               diagnosis_cie10, diagnosis_summary, department, purpose_scope,
+                               ttl_expires_at, is_sanitized, created_at
                         FROM clinical.medical_records
                         WHERE is_sanitized = FALSE
                           AND ttl_expires_at IS NOT NULL

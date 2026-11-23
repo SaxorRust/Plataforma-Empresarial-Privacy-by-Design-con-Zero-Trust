@@ -157,8 +157,10 @@ class TTLBackgroundScheduler:
         self._sweep_service.set_scheduler_running(False)
 
     async def _loop(self) -> None:
-        assert self._stop_event is not None
-        while not self._stop_event.is_set():
+        stop_event = self._stop_event
+        if stop_event is None:
+            return
+        while not stop_event.is_set():
             try:
                 await asyncio.to_thread(
                     self._sweep_service.run_sweep,
@@ -169,8 +171,8 @@ class TTLBackgroundScheduler:
 
             try:
                 await asyncio.wait_for(
-                    self._stop_event.wait(),
+                    stop_event.wait(),
                     timeout=float(self._sweep_service.interval_seconds),
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue

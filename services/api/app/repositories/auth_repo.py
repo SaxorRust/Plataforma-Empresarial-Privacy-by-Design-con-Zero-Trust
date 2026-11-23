@@ -116,7 +116,8 @@ class PostgresUserRepository:
         except psycopg.OperationalError as exc:
             raise DatabaseUnavailableError("Error de conexión al registrar usuario.") from exc
 
-        assert row is not None
+        if row is None:
+            raise RuntimeError("PostgreSQL no devolvió la fila del usuario insertado.")
         return self._row_to_user(row)
 
     def get_user_by_username(self, username: str) -> UserRecord | None:
@@ -213,7 +214,8 @@ class PostgresUserRepository:
         except psycopg.OperationalError as exc:
             raise DatabaseUnavailableError("Error de conexión al guardar Passkey.") from exc
 
-        assert row is not None
+        if row is None:
+            raise RuntimeError("PostgreSQL no devolvió la fila de la credencial WebAuthn.")
         return self._row_to_credential(row)
 
     def list_webauthn_credentials(self, user_id: UUID) -> list[WebAuthnCredentialRecord]:

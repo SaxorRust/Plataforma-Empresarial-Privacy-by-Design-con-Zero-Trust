@@ -1,0 +1,204 @@
+name: Security - OWASP Top 10, SAST, SCA y Secretos
+
+on:
+  push:
+    branches: ["main", "role/**"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    # Auditoría semanal automática para detectar nuevos CVEs en dependencias (OWASP A06)
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================================
+  # 1. SCA — Dependencias Vulnerables o Desactualizadas (OWASP A06)
+  # ============================================================================
+  dependency-audit-sca:
+    name: SCA Dependencias Vulnerables y Desactualizadas (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias del proyecto y pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/api/requirements.txt -r services/siem/requirements.txt
+          pip install pip-audit
+
+      - name: Auditar CVEs conocidos con pip-audit (bloqueante)
+        run: |
+          pip-audit --strict --desc \
+            -r services/api/requirements.txt \
+            -r services/siem/requirements.txt
+
+      - name: Reportar dependencias desactualizadas en resumen de ejecución
+        run: |
+          {
+            echo "## Reporte de Dependencias Desactualizadas (OWASP A06)"
+            echo ""
+            OUTDATED="$(pip list --outdated --format=columns || true)"
+            if [[ -z "${OUTDATED}" ]]; then
+              echo "Todas las dependencias instaladas están en su versión más reciente."
+            else
+              echo '```text'
+              echo "${OUTDATED}"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================================================
+  # 2. SAST Python — Bandit (OWASP A01, A02, A03, A05, A08)
+  # ============================================================================
+  sast-bandit:
+    name: SAST Python (Bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar Bandit
+        run: pip install bandit[sarif]
+
+      - name: Ejecutar análisis estático Bandit sobre servicios
+        run: |
+          bandit -r services/api/app services/siem/app -c pyproject.toml -f json -o bandit-report.json
+          bandit -r services/api/app services/siem/app -c pyproject.toml
+
+      - name: Subir reporte Bandit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-sast-report
+          path: bandit-report.json
+          retention-days: 14
+
+  # ============================================================================
+  # 3. SAST Multi-Lenguaje — Semgrep OWASP Top 10
+  # ============================================================================
+  sast-semgrep-owasp:
+    name: SAST OWASP Top 10 (Semgrep)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Ejecutar reglas Semgrep OWASP Top 10, Python, Security Audit y Dockerfile
+        run: |
+          semgrep scan \
+            --config p/owasp-top-ten \
+            --config p/python \
+            --config p/security-audit \
+            --config p/dockerfile \
+            --exclude tests \
+            --error
+
+  # ============================================================================
+  # 4. Detección de Secretos — Gitleaks (OWASP A02 / A07)
+  # ============================================================================
+  secret-scanning-gitleaks:
+    name: Escaneo de Secretos y Credenciales (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout completo del repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ejecutar Gitleaks con política del repositorio
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  # ============================================================================
+  # 5. Trivy — Vulnerabilidades, Secretos y Misconfiguraciones Docker/IaC (A05/A06)
+  # ============================================================================
+  trivy-supply-chain-and-iac:
+    name: Trivy Supply Chain & IaC (Docker / Compose / Requirements)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Ejecutar Trivy FS (vuln, misconfig, secret — HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          scanners: "vuln,misconfig,secret"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          ignore-unfixed: true
+          skip-dirs: ".venv,tests,docs"
+
+  # ============================================================================
+  # 6. CodeQL — Análisis Semántico SAST de GitHub (OWASP Top 10)
+  # ============================================================================
+  codeql-python-owasp:
+    name: CodeQL Análisis Semántico Python (OWASP)
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Inicializar CodeQL para Python
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: +security-extended,+security-and-quality
+
+      - name: Ejecutar análisis CodeQL
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
+
+  # ============================================================================
+  # 7. Suite Funcional OWASP Top 10 (A01–A10)
+  # ============================================================================
+  owasp-top10-verification:
+    name: Suite de Verificación OWASP Top 10 (A01–A10)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/api/requirements.txt -r services/siem/requirements.txt
+
+      - name: Ejecutar pruebas de seguridad OWASP Top 10
+        run: pytest -v tests/test_owasp_top10_security.py

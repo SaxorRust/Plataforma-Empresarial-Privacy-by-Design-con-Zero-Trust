@@ -432,7 +432,11 @@ def update_clinical_record(
             detail=str(exc),
         ) from exc
 
-    assert updated is not None
+    if updated is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Expediente clínico no encontrado.",
+        )
     return MinimizedRecordResponse(
         record=apply_minimization(updated, decision),
         policy=_build_policy_metadata(

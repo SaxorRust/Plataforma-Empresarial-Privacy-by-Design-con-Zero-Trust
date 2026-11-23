@@ -169,7 +169,7 @@ def export_anonymized_json(
         )
     except AnonymizationNotSatisfiableError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
@@ -210,7 +210,7 @@ def export_anonymized_csv(
         )
     except AnonymizationNotSatisfiableError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 

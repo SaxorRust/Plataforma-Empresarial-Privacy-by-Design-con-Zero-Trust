@@ -106,11 +106,6 @@ class InMemorySanitizationCertificateRepository:
 class PostgresSanitizationCertificateRepository:
     """Repositorio PostgreSQL sobre `compliance.sanitization_certificates`."""
 
-    _COLUMNS = (
-        "certificate_id, opaque_patient_token, method, sha256_hash, "
-        "requested_by, executed_at, certificate_json"
-    )
-
     def __init__(self, dsn: str, connect_timeout: int = 5) -> None:
         self._dsn = dsn
         self._connect_timeout = connect_timeout
@@ -152,13 +147,14 @@ class PostgresSanitizationCertificateRepository:
             with self._connect() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f"""
+                        """
                         INSERT INTO compliance.sanitization_certificates (
                             certificate_id, opaque_patient_token, method, sha256_hash,
                             requested_by, executed_at, certificate_json
                         )
                         VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        RETURNING {self._COLUMNS}
+                        RETURNING certificate_id, opaque_patient_token, method, sha256_hash,
+                                  requested_by, executed_at, certificate_json
                         """,
                         (
                             certificate_id,
@@ -177,7 +173,8 @@ class PostgresSanitizationCertificateRepository:
                 "Error de conexión al guardar certificado de sanitización."
             ) from exc
 
-        assert row is not None
+        if row is None:
+            raise RuntimeError("PostgreSQL no devolvió la fila del certificado insertado.")
         return self._row_to_entity(row)
 
     def get_certificate_by_id(
@@ -187,8 +184,9 @@ class PostgresSanitizationCertificateRepository:
             with self._connect() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f"""
-                        SELECT {self._COLUMNS}
+                        """
+                        SELECT certificate_id, opaque_patient_token, method, sha256_hash,
+                               requested_by, executed_at, certificate_json
                         FROM compliance.sanitization_certificates
                         WHERE certificate_id = %s
                         """,
@@ -210,8 +208,9 @@ class PostgresSanitizationCertificateRepository:
                 with conn.cursor() as cur:
                     if opaque_patient_token is not None:
                         cur.execute(
-                            f"""
-                            SELECT {self._COLUMNS}
+                            """
+                            SELECT certificate_id, opaque_patient_token, method, sha256_hash,
+                                   requested_by, executed_at, certificate_json
                             FROM compliance.sanitization_certificates
                             WHERE opaque_patient_token = %s
                             ORDER BY executed_at DESC
@@ -220,8 +219,9 @@ class PostgresSanitizationCertificateRepository:
                         )
                     else:
                         cur.execute(
-                            f"""
-                            SELECT {self._COLUMNS}
+                            """
+                            SELECT certificate_id, opaque_patient_token, method, sha256_hash,
+                                   requested_by, executed_at, certificate_json
                             FROM compliance.sanitization_certificates
                             ORDER BY executed_at DESC
                             """

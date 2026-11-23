@@ -36,7 +36,7 @@ services:
   # 2. HashiCorp Vault (Bóveda de Identificadores Directos y Tokenización)
   # ----------------------------------------------------------------------------
   vault:
-    image: hashicorp/vault:1.17
+    image: hashicorp/vault:2.2
     container_name: zt-vault
     restart: unless-stopped
     command:

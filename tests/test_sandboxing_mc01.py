@@ -105,6 +105,8 @@ def test_apparmor_profile_contains_mandatory_confinement_rules():
 
     required_directives = [
         "profile zt-hospital-api",
+        "/usr/local/bin/python3.11 rix,",
+        "/usr/local/lib/python3.11/ r,",
         "/app/** r,",
         "/tmp/** rw,",
         "deny capability,",

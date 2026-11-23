@@ -22,27 +22,35 @@ profile zt-hospital-api flags=(attach_disconnected,mediate_deleted) {
   network unix stream,
   network unix dgram,
 
+  # Sockets UNIX internos (socketpair de uvloop/asyncio en AppArmor 4.0 / Ubuntu 26.04)
+  unix (create, bind, listen, accept, connect, send, receive, getattr, setattr, getopt, setopt, shutdown),
+
   # Señales internas del proceso (cierre limpio de Uvicorn)
   signal (receive) set=(term, int, hup, usr1, usr2, kill) peer=unconfined,
   signal (send, receive) peer=zt-hospital-api,
 
   # Ejecución estrictamente limitada al intérprete Python y entrypoint Uvicorn
-  /usr/local/bin/python3.11 ix,
-  /usr/local/bin/python3 ix,
-  /usr/local/bin/python ix,
+  /usr/local/bin/ r,
+  /usr/local/bin/python3.11 rix,
+  /usr/local/bin/python3 rix,
+  /usr/local/bin/python rix,
   /usr/local/bin/uvicorn rix,
 
   # Código de aplicación en modo solo lectura
   /app/ r,
   /app/** r,
 
-  # Bibliotecas compartidas y paquetes Python instalados en la imagen
+  # Directorios y bibliotecas compartidas del runtime Python 3.11 y dependencias
+  /usr/local/lib/ r,
+  /usr/local/lib/python3.11/ r,
   /usr/local/lib/python3.11/** r,
   /usr/local/lib/python3.11/**/*.so mr,
   /usr/local/lib/python3.11/**/*.so.* mr,
   /usr/local/lib/libpython3.11.so* mr,
+  /lib/ r,
   /lib/** r,
   /lib/**/*.so* mr,
+  /usr/lib/ r,
   /usr/lib/** r,
   /usr/lib/**/*.so* mr,
 
@@ -50,15 +58,25 @@ profile zt-hospital-api flags=(attach_disconnected,mediate_deleted) {
   /tmp/ rw,
   /tmp/** rw,
 
-  # Configuración mínima de red, zona horaria y certificados TLS del contenedor
+  # Configuración mínima de red, resolución UID/GID, zona horaria y certificados TLS
+  /etc/passwd r,
+  /etc/group r,
   /etc/hosts r,
   /etc/resolv.conf r,
   /etc/nsswitch.conf r,
   /etc/gai.conf r,
+  /etc/protocols r,
+  /etc/services r,
+  /etc/mime.types r,
   /etc/ld.so.cache r,
+  /etc/ld.so.preload r,
   /etc/localtime r,
+  /etc/ssl/ r,
   /etc/ssl/** r,
+  /usr/share/ r,
+  /usr/share/ca-certificates/ r,
   /usr/share/ca-certificates/** r,
+  /usr/share/zoneinfo/ r,
   /usr/share/zoneinfo/** r,
 
   # Dispositivos mínimos de entropía y salida estándar
@@ -67,15 +85,25 @@ profile zt-hospital-api flags=(attach_disconnected,mediate_deleted) {
   /dev/urandom r,
   /dev/random r,
 
-  # Metadatos propios en /proc necesarios para runtime Python/uvloop
+  # Metadatos propios en /proc y /sys necesarios para runtime Python/uvloop/Argon2id
+  @{PROC}/@{pid}/ r,
   @{PROC}/@{pid}/fd/ r,
+  @{PROC}/@{pid}/fd/** rw,
   @{PROC}/@{pid}/stat r,
   @{PROC}/@{pid}/status r,
   @{PROC}/@{pid}/cmdline r,
   @{PROC}/@{pid}/maps r,
   @{PROC}/@{pid}/limits r,
+  @{PROC}/@{pid}/auxv r,
+  @{PROC}/@{pid}/cgroup r,
+  @{PROC}/@{pid}/mountinfo r,
+  @{PROC}/cpuinfo r,
+  @{PROC}/meminfo r,
   @{PROC}/sys/net/core/somaxconn r,
-  /sys/devices/system/cpu/online r,
+  @{PROC}/sys/crypto/fips_enabled r,
+  /sys/devices/system/cpu/ r,
+  /sys/devices/system/cpu/** r,
+  /sys/fs/cgroup/** r,
 
   # ----------------------------------------------------------------------------
   # Reglas explícitas de denegación (Zero Trust / Principio de Menor Privilegio)

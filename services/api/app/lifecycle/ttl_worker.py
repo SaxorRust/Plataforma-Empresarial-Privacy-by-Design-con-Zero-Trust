@@ -151,6 +151,7 @@ class TTLBackgroundScheduler:
             try:
                 await self._task
             except asyncio.CancelledError:
+                # Cancelación esperada durante el apagado ordenado del ciclo lifespan.
                 pass
             self._task = None
         self._sweep_service.set_scheduler_running(False)

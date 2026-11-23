@@ -114,6 +114,7 @@ def login_with_password(
         try:
             repo.update_password_hash(user.id, new_hash)
         except DatabaseUnavailableError:
+            # Rehash oportuno no bloqueante: el login ya fue verificado válidamente.
             pass
 
     amr = ["pwd"]

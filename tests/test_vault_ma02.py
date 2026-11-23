@@ -242,13 +242,11 @@ def test_vault_tokenize_detokenize_encryption_isolation_and_purge():
     assert detok_data["nss"] == SAMPLE_PII["nss"]
 
     # Médico NO puede purgar de bóveda -> 403
-    assert (
-        client.delete(
-            f"/vault/patients/{opaque_token}",
-            headers=token_for_role("medico"),
-        ).status_code
-        == 403
+    deny_purge_resp = client.delete(
+        f"/vault/patients/{opaque_token}",
+        headers=token_for_role("medico"),
     )
+    assert deny_purge_resp.status_code == 403
 
     # Auditor ARCO ejecuta purga permanente de metadatos KV v2 -> 200
     purge_resp = client.delete(

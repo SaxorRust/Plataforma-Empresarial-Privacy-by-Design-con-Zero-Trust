@@ -1,6 +1,3 @@
-import hashlib
-import hmac
-
 from argon2 import PasswordHasher, Type
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
@@ -9,9 +6,9 @@ class Argon2idPasswordService:
     """
     Servicio de derivación y verificación de contraseñas basado en Argon2id (MA-01):
     - Salt criptográfico único por usuario (generado automáticamente por argon2-cffi).
-    - Pepper secreto a nivel de aplicación combinado mediante HMAC-SHA256 antes de Argon2id
-      (patrón recomendado por OWASP: si se compromete la BD sin el pepper, los hashes
-      permanecen inutilizables para fuerza bruta offline).
+    - Pepper secreto a nivel de aplicación combinado con separación de dominio por longitud
+      directamente sobre Argon2id (sin pre-hash débil): si se compromete la BD sin el pepper,
+      los hashes permanecen inutilizables para fuerza bruta offline.
     - Verificación dummy constante para mitigar enumeración de usuarios por timing.
     """
 
@@ -28,6 +25,7 @@ class Argon2idPasswordService:
         if not pepper or len(pepper) < 8:
             raise ValueError("ARGON2_PEPPER debe definirse con al menos 8 caracteres.")
         self._pepper = pepper.encode("utf-8")
+        self._pepper_prefix = f"{len(self._pepper)}:".encode("ascii") + self._pepper + b":"
         self._hasher = PasswordHasher(
             time_cost=time_cost,
             memory_cost=memory_cost,
@@ -39,14 +37,9 @@ class Argon2idPasswordService:
         # Hash dummy precalculado para igualar costo computacional cuando el usuario no existe
         self._dummy_hash = self.hash_password("Dummy!Passw0rd#TimingMitigation")
 
-    def _apply_pepper(self, password: str) -> str:
-        """Aplica el pepper secreto mediante HMAC-SHA256 antes de Argon2id."""
-        digest = hmac.new(
-            self._pepper,
-            password.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-        return digest
+    def _apply_pepper(self, password: str) -> bytes:
+        """Combina pepper + contraseña con prefijo de longitud (inyectivo) directo para Argon2id."""
+        return self._pepper_prefix + password.encode("utf-8")
 
     def hash_password(self, password: str) -> str:
         peppered = self._apply_pepper(password)

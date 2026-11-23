@@ -147,6 +147,7 @@ def create_segregated_patient_record(
         try:
             vault_service.purge_patient(tokenized.opaque_patient_token)
         except VaultServiceError:
+            # Compensación best-effort: se prioriza propagar el fallo original 503 de PostgreSQL.
             pass
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

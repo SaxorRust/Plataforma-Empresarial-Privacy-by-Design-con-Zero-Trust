@@ -171,9 +171,10 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-      # En Fase 4 (Módulo C) se habilitará:
-      # - seccomp=./infra/seccomp/api-seccomp.json
-      # - apparmor=zt-hospital-api
+      - seccomp=./infra/seccomp/api-seccomp.json
+      # Para activar también AppArmor en Ubuntu Server 26.04.1 LTS:
+      #   sudo ./infra/scripts/install-apparmor-profile.sh
+      #   docker compose -f docker-compose.yml -f docker-compose.apparmor.yml up -d
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 15s

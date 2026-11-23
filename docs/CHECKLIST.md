@@ -23,10 +23,10 @@
 | **Fase 1:** Gobernanza Git, Entorno Base y Planeación | 10% | 10% | `10 / 10` |
 | **Módulo A:** Gobernanza, Identidad, Bóveda y ABAC (20% rúbrica) | 20% | 20% | `20 / 20` |
 | **Módulo B:** Ciclo de Vida, Desidentificación y NIST SP 800-88 (25% rúbrica) | 22% | 22% | `22 / 22` |
-| **Módulo C:** Sandboxing, Syslog RFC 5424 y SIEM (25% rúbrica) | 22% | 0% | `0 / 22` |
+| **Módulo C:** Sandboxing, Syslog RFC 5424 y SIEM (25% rúbrica) | 22% | 6% | `6 / 22` |
 | **Fase 5:** Pruebas Automatizadas, GitHub Actions y Cloudflare Tunnel | 12% | 8% | `8 / 12` |
 | **Fase 6:** Documentación (MD/PDF) y Defensa Técnica (30% rúbrica) | 14% | 0% | `0 / 14` |
-| **TOTAL GLOBAL** | **100%** | **60%** | **`60%`** |
+| **TOTAL GLOBAL** | **100%** | **66%** | **`66%`** |
 
 ---
 
@@ -67,7 +67,7 @@
 
 | ID | Estado | Peso | Elemento / Entregable | Rama / Rol | Evidencia / Criterio de Verificación |
 | :--- | :---: | :---: | :--- | :--- | :--- |
-| `MC-01` | [ ] | 6% | **Confinamiento del sistema:** Perfiles personalizados Seccomp-BPF y AppArmor (ej. bloqueo de `execve`, rutas restringidas) | `role/seguridad-infra` (Ubaldo) | Perfil cargado en contenedor + prueba negativa (`Operation not permitted`) |
+| `MC-01` | [x] | 6% | **Confinamiento del sistema:** Perfiles personalizados Seccomp-BPF y AppArmor (ej. bloqueo de `execve`, rutas restringidas) | `role/seguridad-infra` (Ubaldo) | `infra/seccomp/api-seccomp.json` (default-deny EPERM), `infra/apparmor/zt-hospital-api` + `docker-compose.apparmor.yml`, verificado con `verify-sandboxing-mc01.sh` (`Operation not permitted`), `pytest` y CI (`apparmor_parser` + prueba negativa Docker) |
 | `MC-02` | [ ] | 5% | **Centralización Syslog (RFC 5424):** Envío estructurado de eventos de auditoría al colector SIEM | `role/siem-soc` (Samuel) | Eventos RFC 5424 recibidos e indexados en el SIEM |
 | `MC-03` | [ ] | 5% | **Sanitización en ingesta (Regex):** Ofuscación automática de tarjetas, CURP, contraseñas antes de persistir | `role/siem-soc` (Samuel) | Logs almacenados muestran valores enmascarados (`***`) |
 | `MC-04` | [ ] | 6% | **Reglas de correlación temporal (mín. 2):** Detección de fuerza bruta + alerta crítica por consultas masivas | `role/siem-soc` (Samuel) | Alertas disparadas y visibles en pruebas simuladas |
@@ -108,3 +108,4 @@
 | 2026-11-22 | `MA-02`, `MA-03`, `MA-04` | Jezreel | `role/privacidad-ciclo-vida` | Integración segregada Vault+PostgreSQL (`/clinical/records`, `/clinical/records/segregated`, `/clinical/records/{id}/patient-identity`), cliente OPA fail-closed y política `hospital_abac.rego` (10/10 `opa test` + `opa check --strict`), motor de minimización cuantitativa/cualitativa por rol y verificación `pytest` (17/17), `ruff`, `verify-ma01-ma02.sh` (`PASS=14/FAIL=0`) y `verify-module-a.sh` (`PASS=9/FAIL=0`) (**Avance: 35%**). |
 | 2026-11-22 | `MB-01`, `MB-02`, `MB-03`, `MB-04` | Jezreel | `role/privacidad-ciclo-vida` | Planificador TTL automático (`TTLBackgroundScheduler` + `/lifecycle/ttl/*`), exportador *Safe Harbor* (18 IDs HIPAA, tope `90+`) + $k$-anonimato/$l$-diversidad JSON y CSV (`/lifecycle/exports/*`), borrado ARCO + NIST SP 800-88 (`CLEAR`/`PURGE` multi-pasada, `secure_zero_buffer` en memoria y purga Vault KV v2) y certificados JSON/PDF (`reportlab`) con verificación `SHA-256` (`/lifecycle/certificates/*`); verificado con `opa test` (13/13), `pytest` (21/21), `ruff` y E2E Docker (`verify-ma01-ma02.sh` 14/14, `verify-module-a.sh` 9/9, `verify-module-b.sh` 8/8) (**Avance: 57%**). |
 | 2026-11-22 | `F5-02` (DevSecOps & OWASP Top 10) | Jezreel | `role/privacidad-ciclo-vida` | Workflows `ci.yml` y `security-owasp.yml` con SHAs inmutables + `dependabot.yml` (cooldown 7d) + `pyproject.toml` + `test_owasp_top10_security.py` (A01–A10); remediados 40 CVEs en dependencias (`pyjwt`, `starlette`, `pytest`), 9 hallazgos Bandit `B608` (SQL estático parametrizado) y 1 hallazgo Semgrep; **9/9 jobs en verde** en GitHub Actions (`31/31 pytest`, 0 CVEs `pip-audit`, 0 hallazgos Bandit/Semgrep/Trivy/Gitleaks/CodeQL) (**Avance: 60%**). |
+| 2026-11-22 | `MC-01` (Seccomp-BPF + AppArmor) | Ubaldo | `role/seguridad-infra` | Perfil Seccomp-BPF default-deny (`infra/seccomp/api-seccomp.json` bloqueando `fork`/`vfork`/`subprocess`/`mount`/`unshare`/`ptrace`/`AF_PACKET`/`chmod` con `EPERM`), perfil AppArmor (`infra/apparmor/zt-hospital-api` + `docker-compose.apparmor.yml`), scripts `install-apparmor-profile.sh` y `verify-sandboxing-mc01.sh`, pruebas `test_sandboxing_mc01.py` y validación CI (`apparmor_parser` + prueba negativa Seccomp Docker) (**Avance: 66%**). |

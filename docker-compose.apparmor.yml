@@ -2,11 +2,11 @@ services:
   # ============================================================================
   # Override Zero Trust para VM Ubuntu Server 26.04.1 LTS con AppArmor activo
   # Prerrequisito: sudo ./infra/scripts/install-apparmor-profile.sh
+  # Nota: Docker Compose fusiona `security_opt` con `docker-compose.yml`
+  #       (que ya define `no-new-privileges:true` y `seccomp=...`).
   # Uso:
   #   docker compose -f docker-compose.yml -f docker-compose.apparmor.yml up -d
   # ============================================================================
   api:
     security_opt:
-      - no-new-privileges:true
-      - seccomp=./infra/seccomp/api-seccomp.json
       - apparmor=zt-hospital-api

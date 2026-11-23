@@ -122,11 +122,14 @@ def test_apparmor_profile_contains_mandatory_confinement_rules():
 
 
 def test_docker_compose_enables_seccomp_and_apparmor_override():
-    compose_text = DOCKER_COMPOSE_PATH.read_text(encoding="utf-8")
-    assert "seccomp=./infra/seccomp/api-seccomp.json" in compose_text
-    assert "no-new-privileges:true" in compose_text
-    assert "read_only: true" in compose_text
+    import yaml
 
-    override_text = DOCKER_COMPOSE_APPARMOR_PATH.read_text(encoding="utf-8")
-    assert "apparmor=zt-hospital-api" in override_text
-    assert "seccomp=./infra/seccomp/api-seccomp.json" in override_text
+    compose_data = yaml.safe_load(DOCKER_COMPOSE_PATH.read_text(encoding="utf-8"))
+    api_service = compose_data["services"]["api"]
+    assert api_service["read_only"] is True
+    assert "ALL" in api_service["cap_drop"]
+    assert "no-new-privileges:true" in api_service["security_opt"]
+    assert "seccomp=./infra/seccomp/api-seccomp.json" in api_service["security_opt"]
+
+    override_data = yaml.safe_load(DOCKER_COMPOSE_APPARMOR_PATH.read_text(encoding="utf-8"))
+    assert override_data["services"]["api"]["security_opt"] == ["apparmor=zt-hospital-api"]

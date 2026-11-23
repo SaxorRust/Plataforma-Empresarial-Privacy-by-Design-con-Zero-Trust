@@ -230,7 +230,7 @@ SOC_DASHBOARD_HTML = """<!DOCTYPE html>
         Auto-actualizar (5s)
       </label>
       <button id="refresh-btn" class="btn btn-primary" type="button">Actualizar Ahora</button>
-      <a id="link-clinical-portal" class="btn btn-secondary" href="http://localhost:8000/portal">← Portal Clínico (:8000)</a>
+      <a id="link-clinical-portal" class="btn btn-secondary" href="https://tralaleritosmigajeros.uk/portal">← Portal Clínico (:8000)</a>
     </div>
   </header>
 
@@ -527,7 +527,12 @@ SOC_DASHBOARD_HTML = """<!DOCTYPE html>
 
     document.getElementById("sim-pii-leak").addEventListener("click", async function () {
       const ts = new Date().toISOString();
-      const frame = '<86>1 ' + ts + ' hospital-node hospital-privacy-api 4201 AUDIT_PII_TEST [audit@32473 actor="dr_prueba" password="ClaveSecretaHospital2026!" curp="PERJ920514HPLRNS08"] Pago tarjeta=4111-1111-1111-1111 nss=45901234567 Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+      const syntheticJwt = [
+        btoa('{"alg":"HS256","typ":"JWT"}').replace(/=+$/, ""),
+        btoa('{"sub":"demo_actor"}').replace(/=+$/, ""),
+        "demoSignaturePlaceholder000000",
+      ].join(".");
+      const frame = '<86>1 ' + ts + ' hospital-node hospital-privacy-api 4201 AUDIT_PII_TEST [audit@32473 actor="dr_prueba" password="ClaveSecretaHospital2026!" curp="PERJ920514HPLRNS08"] Pago tarjeta=4111-1111-1111-1111 nss=45901234567 Authorization: Bearer ' + syntheticJwt;
       const res = await ingestFrame(frame);
       showSocToast("Sanitización MC-03 verificada: " + res.event.redaction_count + " secretos/PII enmascarados con *** antes de SQLite.");
       await refreshDashboard();

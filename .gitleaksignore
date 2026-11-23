@@ -1,0 +1,3 @@
+# Falso positivo histórico en commit 78651a6: JWT sintético de demostración (RFC 7515 / jwt.io)
+# utilizado en el botón simulador MC-03 del dashboard SIEM y reemplazado por generación dinámica.
+78651a6a5ee7c77d5fa78eb65918ea10a47698ea:services/siem/app/dashboard.py:jwt:530

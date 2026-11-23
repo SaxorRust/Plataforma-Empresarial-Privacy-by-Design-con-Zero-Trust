@@ -95,6 +95,30 @@ class PostgresUserRepository:
             created_at=row[6],
         )
 
+    def ensure_role_constraint(self) -> None:
+        """Garantiza que el constraint CHECK de roles incluya `super_admin` en BD ya inicializadas."""
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "ALTER TABLE auth_identity.users DROP CONSTRAINT IF EXISTS users_role_check"
+                    )
+                    cur.execute(
+                        """
+                        ALTER TABLE auth_identity.users
+                        ADD CONSTRAINT users_role_check
+                        CHECK (role IN (
+                            'medico', 'enfermeria', 'analista', 'auditor_arco',
+                            'admin_sec', 'paciente', 'super_admin'
+                        ))
+                        """
+                    )
+                conn.commit()
+        except psycopg.OperationalError as exc:
+            raise DatabaseUnavailableError(
+                "Error de conexión al actualizar restricción de roles."
+            ) from exc
+
     def create_user(self, *, username: str, role: UserRole, password_hash: str) -> UserRecord:
         user_id = uuid4()
         try:

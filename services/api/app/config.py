@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     webauthn_origin: str = "https://tralaleritosmigajeros.uk"
     webauthn_expected_origins: str = ""
     webauthn_challenge_ttl_seconds: int = 300
+    seed_default_accounts: bool = True
+    seed_accounts_suffix: str = "#2026!ZT"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

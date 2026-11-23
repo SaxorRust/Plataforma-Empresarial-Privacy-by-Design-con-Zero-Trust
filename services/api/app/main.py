@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,17 +7,41 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.lifecycle.ttl_worker import TTLBackgroundScheduler
 from app.middleware import SecurityHeadersMiddleware
+from app.repositories.auth_repo import DatabaseUnavailableError
 from app.routers.auth import router as auth_router
 from app.routers.clinical import router as clinical_router
 from app.routers.lifecycle import router as lifecycle_router
 from app.routers.ui import clinical_portal
 from app.routers.ui import router as ui_router
 from app.routers.vault import router as vault_router
-from app.security.dependencies import get_ttl_sweep_service
+from app.security.dependencies import (
+    get_password_service,
+    get_ttl_sweep_service,
+    get_user_repository,
+)
+from app.security.seed_accounts import seed_default_team_accounts
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    if settings.seed_default_accounts:
+        repo_provider = application.dependency_overrides.get(
+            get_user_repository, get_user_repository
+        )
+        pwd_provider = application.dependency_overrides.get(
+            get_password_service, get_password_service
+        )
+        try:
+            seed_default_team_accounts(
+                repo_provider(),
+                pwd_provider(),
+                suffix=settings.seed_accounts_suffix,
+            )
+        except DatabaseUnavailableError as exc:
+            logger.warning("Se omitió el seed inicial de cuentas (BD no disponible): %s", exc)
+
     ttl_provider = application.dependency_overrides.get(
         get_ttl_sweep_service, get_ttl_sweep_service
     )

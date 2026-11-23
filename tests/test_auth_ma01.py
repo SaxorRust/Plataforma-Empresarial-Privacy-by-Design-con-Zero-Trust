@@ -521,3 +521,33 @@ def test_super_admin_register_login_and_me():
     assert me.json()["role"] == "super_admin"
     assert me.json()["username"] == "super_admin"
 
+
+def test_seed_default_team_accounts_idempotent_and_all_7_logins():
+    client, repo, pwd_service, _jwt = _build_auth_test_client()
+    from app.security.seed_accounts import seed_default_team_accounts
+
+    created_first = seed_default_team_accounts(repo, pwd_service, suffix="#2026!ZT")
+    assert len(created_first) == 7
+
+    # Segunda ejecución debe ser idempotente (0 nuevas cuentas)
+    created_second = seed_default_team_accounts(repo, pwd_service, suffix="#2026!ZT")
+    assert created_second == []
+
+    expected_accounts = [
+        ("super_admin", "SuperAdmin#2026!ZT", "super_admin"),
+        ("medico_demo", "Medico#2026!ZT", "medico"),
+        ("enfermeria_demo", "Enfermeria#2026!ZT", "enfermeria"),
+        ("analista_demo", "Analista#2026!ZT", "analista"),
+        ("auditor_arco", "AuditorArco#2026!ZT", "auditor_arco"),
+        ("admin_sec", "AdminSec#2026!ZT", "admin_sec"),
+        ("paciente_demo", "Paciente#2026!ZT", "paciente"),
+    ]
+    for username, password, expected_role in expected_accounts:
+        login = client.post("/auth/login", json={"username": username, "password": password})
+        assert login.status_code == 200, f"Login falló para {username}"
+        token = login.json()["access_token"]
+        me = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert me.status_code == 200
+        assert me.json()["role"] == expected_role
+        assert me.json()["username"] == username
+

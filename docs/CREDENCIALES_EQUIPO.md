@@ -1,13 +1,13 @@
 # Credenciales Genéricas del Equipo — Acceso por Roles (ABAC + Super Admin)
 
 > **Entorno de uso:** Pruebas, demostraciones y desarrollo del equipo (BUAP FCC — ICSA 252).
-> La base de datos inicia vacía por diseño **Zero Trust** (sin cuentas hardcodeadas en producción). Utiliza esta guía para registrar y compartir las cuentas estándar del equipo desde el portal web.
+> Al iniciar el servicio `api` (`SEED_DEFAULT_ACCOUNTS=true` por defecto), la plataforma **actualiza automáticamente el constraint de `super_admin` en PostgreSQL y crea de forma idempotente las 7 cuentas genéricas** si aún no existen, para que todo el equipo pueda iniciar sesión de inmediato.
 
 ---
 
-## 1. Tabla de Credenciales Genéricas Sugeridas
+## 1. Tabla de Credenciales Genéricas Precargadas
 
-Todas las contraseñas cumplen la política **OWASP A07** de la plataforma (mínimo 12 caracteres, mayúscula, minúscula, dígito y carácter especial) y se protegen con **Argon2id + Salt único + Pepper**.
+Todas las contraseñas cumplen la política **OWASP A07** de la plataforma (mínimo 12 caracteres, mayúscula, minúscula, dígito y carácter especial) y se almacenan con **Argon2id + Salt único + Pepper**.
 
 | Rol (`role`) | Usuario (`username`) | Contraseña (`password`) | Cabecera `X-Purpose` por defecto | Alcance y Módulos Autorizados |
 | :--- | :--- | :--- | :--- | :--- |
@@ -23,31 +23,19 @@ Todas las contraseñas cumplen la política **OWASP A07** de la plataforma (mín
 
 ---
 
-## 2. Cómo Registrar las Cuentas en el Portal Web
+## 2. Cómo Activarlas en tu Servidor / VM
 
-1. Abre el portal en **`https://tralaleritosmigajeros.uk/`** (o `http://localhost:8000/` en entorno local).
-2. Selecciona la pestaña **Registrar Cuenta**.
-3. Ingresa el **Nombre de usuario**, selecciona el **Rol Institucional (ABAC)** y coloca la **Contraseña** de la tabla anterior.
-4. Haz clic en **Crear Cuenta y Autenticar**.
-5. Una vez creada, cualquier integrante del equipo puede entrar desde la pestaña **Iniciar Sesión** con ese mismo usuario y contraseña (o vincular su propia **Passkey FIDO2/WebAuthn** en la pestaña *1. Mi Sesión & Passkeys*).
-
----
-
-## 3. Si tu Servidor Ya Tiene la Base de Datos Inicializada (Migración de `super_admin`)
-
-El archivo `infra/postgres/init.sql` solo se ejecuta cuando el volumen `postgres_data` es nuevo. Si ya tenías contenedores corriendo antes de agregar el rol `super_admin`, actualiza la restricción `CHECK` en PostgreSQL sin perder tus datos existentes:
+Solo actualiza el repositorio y reconstruye `api` y `opa`:
 
 ```bash
-docker compose exec postgres psql -U "${POSTGRES_USER:-zt_app_user}" -d "${POSTGRES_DB:-hospital_zt}" -c "
-ALTER TABLE auth_identity.users DROP CONSTRAINT IF EXISTS users_role_check;
-ALTER TABLE auth_identity.users
-  ADD CONSTRAINT users_role_check
-  CHECK (role IN ('medico', 'enfermeria', 'analista', 'auditor_arco', 'admin_sec', 'paciente', 'super_admin'));
-"
-```
-
-Después reinicia la API y OPA (si modificaste código o políticas):
-
-```bash
+git pull origin main
 docker compose up -d --build api opa
 ```
+
+Al arrancar, la API ejecutará automáticamente la migración del constraint `super_admin` y creará las 7 cuentas en PostgreSQL (sin sobrescribir cuentas existentes). Después:
+
+1. Abre **`https://tralaleritosmigajeros.uk/`** (o `http://localhost:8000/`).
+2. En la pestaña **Iniciar Sesión**, ingresa cualquiera de los 7 usuarios y contraseñas de la tabla.
+3. Opcionalmente, cada integrante puede registrar su propia **Passkey FIDO2/WebAuthn** en *1. Mi Sesión & Passkeys*.
+
+> Para desactivar la precarga automática en un entorno productivo estricto, define `SEED_DEFAULT_ACCOUNTS=false` en tu archivo `.env`.

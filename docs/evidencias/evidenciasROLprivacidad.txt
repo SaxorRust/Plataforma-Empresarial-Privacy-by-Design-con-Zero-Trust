@@ -1,0 +1,53 @@
+vboxuser@KEYCLOAK:~/Plataforma-Empresarial-Privacy-by-Design-con-Zero-Trust$ docker compose restart opa
+./infra/scripts/verify-module-a.sh https://tralaleritosmigajeros.uk
+./infra/scripts/verify-module-b.sh https://tralaleritosmigajeros.uk
+[+] restart 0/1
+ ⠼ Container zt-opa Restarting                                                                                      0.5s
+========================================================================
+ Verificación E2E Módulo A: MA-02 Segregación + MA-03 OPA + MA-04 Minimización
+ Objetivo: https://tralaleritosmigajeros.uk
+========================================================================
+
+--- 1. Estado del motor OPA (MA-03) ---
+[PASS] GET /clinical/policy/status confirmó OPA operativo y política hospital.authz cargada
+
+--- 2. MA-02: Alta segregada (Vault PII + PostgreSQL Clínico) ---
+[PASS] POST /clinical/records/segregated aisló PII en Vault (pat_21a024036c5e97f3638fe340eb0bae72) y creó expediente 8f102155-8762-4a16-8e67-7b3dd44961e8
+
+--- 3. MA-03: Prevención de Function Creep (403 Forbidden) ---
+[PASS] Consulta sin cabecera X-Purpose bloqueada con HTTP 403
+[PASS] Médico con X-Purpose: marketing bloqueado con HTTP 403 (Function Creep)
+[PASS] Analista bloqueado al consultar expediente individual (HTTP 403, anti-singularización)
+[PASS] Separación de funciones: admin_sec recibió HTTP 403 en /clinical/records
+
+--- 4. MA-04: Minimización cuantitativa y cualitativa por rol ---
+[PASS] Enfermería recibió token enmascarado (pat_21a0...ae72) y sin columna diagnosis_cie10
+[PASS] Analista recibió datos generalizados (age_range=30-39, zip=72***) sin tokens ni IDs
+[PASS] Auditor ARCO recibió únicamente metadatos de ciclo de vida (sin diagnósticos)
+
+========================================================================
+ Resumen E2E Módulo A: PASS=9 | FAIL=0
+========================================================================
+========================================================================
+ Verificación E2E Módulo B: MB-01 TTL + MB-02 Safe Harbor/(k,l) + MB-03/04 NIST 800-88
+ Objetivo: https://tralaleritosmigajeros.uk
+========================================================================
+
+--- 1. MB-01: Estado de scheduler TTL y purga de registro vencido ---
+[PASS] GET /lifecycle/ttl/status confirmó scheduler TTL activo en segundo plano
+[PASS] POST /lifecycle/ttl/sweep purgó registro vencido y su token huérfano en Vault (GET -> 404)
+
+--- 2. MB-02: Exportación Safe Harbor + k-anonimato (k=3) + l-diversidad (l=2) ---
+[PASS] POST /lifecycle/exports/anonymized verificó Safe Harbor (18 IDs, 90+) + k=3, l=3
+[PASS] GET /lifecycle/exports/anonymized.csv generó exportación estadística CSV (HTTP 200)
+
+--- 3. MB-03 & MB-04: Derechos ARCO + NIST SP 800-88 PURGE + Certificados JSON/PDF SHA-256 ---
+[PASS] POST /lifecycle/arco/erasure ejecutó NIST SP 800-88 PURGE (cert=c5394a18-300e-4f4b-a106-f87eb9db6543, sha256=351b79123356...)
+[PASS] GET /lifecycle/certificates/c5394a18-300e-4f4b-a106-f87eb9db6543/verify confirmó integridad SHA-256 válida
+[PASS] GET /lifecycle/certificates/c5394a18-300e-4f4b-a106-f87eb9db6543.json descargado con sello SHA-256 íntegro
+[PASS] GET /lifecycle/certificates/c5394a18-300e-4f4b-a106-f87eb9db6543.pdf generó documento PDF válido (3924 bytes)
+
+========================================================================
+ Resumen E2E Módulo B: PASS=8 | FAIL=0
+========================================================================
+vboxuser@KEYCLOAK:~/Plataforma-Empresarial-Privacy-by-Design-con-Zero-Trust$

@@ -25,8 +25,8 @@
 | **Módulo B:** Ciclo de Vida, Desidentificación y NIST SP 800-88 (25% rúbrica) | 22% | 22% | `22 / 22` |
 | **Módulo C:** Sandboxing, Syslog RFC 5424 y SIEM (25% rúbrica) | 22% | 22% | `22 / 22` |
 | **Fase 5:** Pruebas Automatizadas, GitHub Actions y Cloudflare Tunnel | 12% | 12% | `12 / 12` |
-| **Fase 6:** Documentación (MD/PDF) y Defensa Técnica (30% rúbrica) | 14% | 0% | `0 / 14` |
-| **TOTAL GLOBAL** | **100%** | **86%** | **`86%`** |
+| **Fase 6:** Documentación (MD/PDF) y Defensa Técnica (30% rúbrica) | 14% | 14% | `14 / 14` |
+| **TOTAL GLOBAL** | **100%** | **100%** | **`100%`** |
 
 ---
 
@@ -89,9 +89,9 @@
 
 | ID | Estado | Peso | Elemento / Entregable | Rama / Rol | Evidencia / Criterio de Verificación |
 | :--- | :---: | :---: | :--- | :--- | :--- |
-| `F6-01` | [ ] | 5% | **Documentación del sistema (Markdown + PDF):** Arquitectura, diagramas, perfiles, evidencias de pruebas y certificados | Todos | Reporte técnico en `docs/` + archivo `.pdf` compilado |
-| `F6-02` | [ ] | 5% | **Guías de Defensa Técnica personalizadas:** Material de estudio, flujo end-to-end y Q&A para **Jezreel**, **Samuel** y **Ubaldo** | Todos | Guías listas para repartir antes del 1 de diciembre |
-| `F6-03` | [ ] | 4% | **Ensayo de demo en vivo (20 min):** Guion paso a paso de demostración de los 3 módulos | Todos | Simulación completa sin fallos antes del 1 de diciembre |
+| `F6-01` | [x] | 5% | **Documentación del sistema (Markdown + PDF):** Arquitectura, diagramas, perfiles, evidencias de pruebas y certificados | Todos | Reporte técnico completo en `docs/DOCUMENTACION_TECNICA.md` y versión compilada en `docs/DOCUMENTACION_TECNICA.pdf` (incluye diagrama de arquitectura, evidencias E2E y capturas Cloudflare) |
+| `F6-02` | [x] | 5% | **Guías de Defensa Técnica personalizadas:** Material de estudio, flujo end-to-end y Q&A para **Jezreel**, **Samuel** y **Ubaldo** | Todos | Guías por rol en `docs/defensa/GUIA_DEFENSA_JEZREEL.md`, `docs/defensa/GUIA_DEFENSA_UBALDO.md` y `docs/defensa/GUIA_DEFENSA_SAMUEL.md` |
+| `F6-03` | [x] | 4% | **Ensayo de demo en vivo (20 min):** Guion paso a paso de demostración de los 3 módulos | Todos | Guion sincronizado minuto a minuto y plan B de contingencia en `docs/defensa/GUION_DEMO_20MIN.md` |
 
 ---
 
@@ -110,3 +110,5 @@
 | 2026-11-22 | `F5-02` (DevSecOps & OWASP Top 10) | Jezreel | `role/privacidad-ciclo-vida` | Workflows `ci.yml` y `security-owasp.yml` con SHAs inmutables + `dependabot.yml` (cooldown 7d) + `pyproject.toml` + `test_owasp_top10_security.py` (A01–A10); remediados 40 CVEs en dependencias (`pyjwt`, `starlette`, `pytest`), 9 hallazgos Bandit `B608` (SQL estático parametrizado) y 1 hallazgo Semgrep; **9/9 jobs en verde** en GitHub Actions (`31/31 pytest`, 0 CVEs `pip-audit`, 0 hallazgos Bandit/Semgrep/Trivy/Gitleaks/CodeQL) (**Avance: 60%**). |
 | 2026-11-22 | `MC-01` (Seccomp-BPF + AppArmor) | Ubaldo | `role/seguridad-infra` | Perfil Seccomp-BPF default-deny (`infra/seccomp/api-seccomp.json` bloqueando `fork`/`vfork`/`subprocess`/`mount`/`unshare`/`ptrace`/`AF_PACKET`/`chmod` con `EPERM`), perfil AppArmor (`infra/apparmor/zt-hospital-api` + `docker-compose.apparmor.yml`), scripts `install-apparmor-profile.sh` y `verify-sandboxing-mc01.sh`, pruebas `test_sandboxing_mc01.py` y validación CI (`apparmor_parser` + prueba negativa Seccomp Docker) (**Avance: 66%**). |
 | 2026-11-23 | `MC-02`, `MC-03`, `MC-04`, `F5-01` | Samuel | `role/siem-soc` | Emisor Syslog RFC 5424 integrado en API (`services/api/app/audit/syslog_client.py` en auth, clinical, vault, lifecycle y denegaciones OPA), colector SIEM UDP/TCP RFC 5424 (`services/siem/app/`), pipeline de sanitización Regex pre-persistencia (tarjetas Luhn, CURP, contraseñas, NSS, JWT), motor de correlación temporal (3 reglas: fuerza bruta `RULE-001`, consultas masivas CRÍTICA `RULE-002` y denegaciones OPA `RULE-003`), consola SOC HTML/API, script `verify-siem-module-c.sh` y pruebas `test_siem_module_c.py` (`38/38 pytest`, `ruff` y `bandit` 0 hallazgos) (**Avance: 86%**). |
+| 2026-11-23 | Mejoras Portal Zero Trust UI | Ubaldo | `c8cae75` | Puerta de autenticación obligatoria (`#auth-gate`), botón de visualizar/ocultar contraseña en login y registro, y generador criptográfico de contraseñas (Web Crypto API, 16 chars) con botón de copiado. |
+| 2026-11-23 | `F6-01`, `F6-02`, `F6-03` | Equipo | `main` | Documentación técnica completa (`docs/DOCUMENTACION_TECNICA.md` y `docs/DOCUMENTACION_TECNICA.pdf`), guías personalizadas de defensa técnica para Jezreel, Ubaldo y Samuel (`docs/defensa/GUIA_DEFENSA_*.md`) y guion de demo en vivo de 20 minutos (`docs/defensa/GUION_DEMO_20MIN.md`) (**Avance: 100%**). |

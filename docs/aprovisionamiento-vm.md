@@ -96,6 +96,24 @@ docker compose down
 
 ---
 
+## 4.1 Activar confinamiento completo Seccomp-BPF + AppArmor (`MC-01`)
+
+El perfil **Seccomp-BPF** (`infra/seccomp/api-seccomp.json`) ya se aplica por defecto en `docker-compose.yml`. Para activar también el perfil **AppArmor** (`zt-hospital-api`) en Ubuntu Server 26.04.1 LTS:
+
+```bash
+sudo ./infra/scripts/install-apparmor-profile.sh
+docker compose -f docker-compose.yml -f docker-compose.apparmor.yml up -d --build
+```
+
+Verifica el confinamiento y los módulos de identidad/bóveda con las suites automatizadas:
+
+```bash
+./infra/scripts/verify-sandboxing-mc01.sh
+./infra/scripts/verify-ma01-ma02.sh http://127.0.0.1:8000
+```
+
+---
+
 ## 5. Conectar la VM a `tralaleritosmigajeros.uk` vía `cloudflared`
 
 Sigue los comandos exactos en [infra/cloudflared/README.md](../infra/cloudflared/README.md):

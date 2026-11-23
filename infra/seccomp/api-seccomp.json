@@ -1,0 +1,238 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "defaultErrnoRet": 1,
+  "archMap": [
+    {
+      "architecture": "SCMP_ARCH_X86_64",
+      "subArchitectures": [
+        "SCMP_ARCH_X86",
+        "SCMP_ARCH_X32"
+      ]
+    },
+    {
+      "architecture": "SCMP_ARCH_AARCH64",
+      "subArchitectures": [
+        "SCMP_ARCH_ARM"
+      ]
+    }
+  ],
+  "syscalls": [
+    {
+      "comment": "Syscalls mínimos de E/S de archivos (raíz read-only + /tmp tmpfs) y metadatos para Python/FastAPI",
+      "names": [
+        "access",
+        "chdir",
+        "close",
+        "close_range",
+        "dup",
+        "dup2",
+        "dup3",
+        "faccessat",
+        "faccessat2",
+        "fchdir",
+        "fcntl",
+        "fdatasync",
+        "flock",
+        "fstat",
+        "fstatfs",
+        "fsync",
+        "ftruncate",
+        "getcwd",
+        "getdents",
+        "getdents64",
+        "ioctl",
+        "lseek",
+        "lstat",
+        "mkdir",
+        "mkdirat",
+        "newfstatat",
+        "open",
+        "openat",
+        "pipe",
+        "pipe2",
+        "pread64",
+        "pwrite64",
+        "read",
+        "readlink",
+        "readlinkat",
+        "readv",
+        "rename",
+        "renameat",
+        "renameat2",
+        "rmdir",
+        "stat",
+        "statfs",
+        "statx",
+        "truncate",
+        "umask",
+        "unlink",
+        "unlinkat",
+        "write",
+        "writev"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Gestión de memoria, event-loop (uvloop/asyncio), sincronización, reloj y entropía criptográfica",
+      "names": [
+        "arch_prctl",
+        "brk",
+        "capget",
+        "clock_getres",
+        "clock_gettime",
+        "clock_nanosleep",
+        "epoll_create",
+        "epoll_create1",
+        "epoll_ctl",
+        "epoll_pwait",
+        "epoll_pwait2",
+        "epoll_wait",
+        "eventfd",
+        "eventfd2",
+        "execve",
+        "exit",
+        "exit_group",
+        "futex",
+        "futex_waitv",
+        "getegid",
+        "geteuid",
+        "getgid",
+        "getgroups",
+        "getpgid",
+        "getpgrp",
+        "getpid",
+        "getppid",
+        "getrandom",
+        "getrlimit",
+        "getrusage",
+        "getsid",
+        "gettid",
+        "gettimeofday",
+        "getuid",
+        "get_robust_list",
+        "madvise",
+        "mmap",
+        "mprotect",
+        "mremap",
+        "munmap",
+        "nanosleep",
+        "poll",
+        "ppoll",
+        "prctl",
+        "prlimit64",
+        "pselect6",
+        "restart_syscall",
+        "rseq",
+        "rt_sigaction",
+        "rt_sigprocmask",
+        "rt_sigreturn",
+        "sched_getaffinity",
+        "sched_getparam",
+        "sched_getscheduler",
+        "sched_yield",
+        "select",
+        "set_robust_list",
+        "set_tid_address",
+        "sigaltstack",
+        "signalfd",
+        "signalfd4",
+        "sysinfo",
+        "tgkill",
+        "timerfd_create",
+        "timerfd_gettime",
+        "timerfd_settime",
+        "tkill",
+        "uname",
+        "wait4",
+        "waitid"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Operaciones de red necesarias para FastAPI, PostgreSQL, Vault, OPA y Syslog",
+      "names": [
+        "accept",
+        "accept4",
+        "bind",
+        "connect",
+        "getpeername",
+        "getsockname",
+        "getsockopt",
+        "listen",
+        "recvfrom",
+        "recvmmsg",
+        "recvmsg",
+        "sendmmsg",
+        "sendmsg",
+        "sendto",
+        "setsockopt",
+        "shutdown",
+        "socketpair"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Restringir creación de sockets solo a AF_UNIX (1), AF_INET (2) y AF_INET6 (10); bloquea AF_PACKET/raw",
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 1,
+          "op": "SCMP_CMP_EQ"
+        }
+      ]
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2,
+          "op": "SCMP_CMP_EQ"
+        }
+      ]
+    },
+    {
+      "names": [
+        "socket"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 10,
+          "op": "SCMP_CMP_EQ"
+        }
+      ]
+    },
+    {
+      "comment": "Forzar fallback de clone3 -> clone (ENOSYS=38) para inspeccionar banderas CLONE_THREAD",
+      "names": [
+        "clone3"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 38
+    },
+    {
+      "comment": "Permitir clone SOLO para hilos internos (CLONE_THREAD=0x10000); bloquea fork/vfork/subprocesos/namespaces",
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 65536,
+          "valueTwo": 65536,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ]
+    }
+  ]
+}

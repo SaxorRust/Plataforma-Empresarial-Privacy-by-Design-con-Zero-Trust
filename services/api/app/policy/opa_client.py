@@ -104,7 +104,7 @@ class OPAClient:
                     "Acceso denegado por política ABAC (prevención de function creep)",
                 )
             ),
-            policy_version=str(result.get("policy_version", "1.1.0")),
+            policy_version=str(result.get("policy_version", "legacy")),
         )
 
     def get_status(self) -> OPAStatusResponse:

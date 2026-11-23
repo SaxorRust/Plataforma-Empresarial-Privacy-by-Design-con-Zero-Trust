@@ -38,8 +38,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if not request.url.path.startswith(DOCS_PATHS):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
-            response.headers["Content-Security-Policy"] = (
-                "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-            )
+            if request.url.path in ("/", "/portal") or request.url.path.startswith("/ui/"):
+                response.headers["Content-Security-Policy"] = (
+                    "default-src 'self'; script-src 'self'; style-src 'self'; "
+                    "img-src 'self' data:; connect-src 'self'; "
+                    "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+                )
+            else:
+                response.headers["Content-Security-Policy"] = (
+                    "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+                )
 
         return response

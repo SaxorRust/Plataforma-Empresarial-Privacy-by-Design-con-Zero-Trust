@@ -9,6 +9,8 @@ from app.middleware import SecurityHeadersMiddleware
 from app.routers.auth import router as auth_router
 from app.routers.clinical import router as clinical_router
 from app.routers.lifecycle import router as lifecycle_router
+from app.routers.ui import clinical_portal
+from app.routers.ui import router as ui_router
 from app.routers.vault import router as vault_router
 from app.security.dependencies import get_ttl_sweep_service
 
@@ -28,7 +30,7 @@ async def lifespan(application: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.4.0",
+    version="0.5.0",
     description=(
         "Plataforma Empresarial Privacy-by-Design con Zero Trust y Auditoría SIEM "
         "(Escenario Hospitalario — BUAP FCC)"
@@ -52,6 +54,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Purpose", "X-Request-ID"],
 )
 app.add_middleware(SecurityHeadersMiddleware)
+app.include_router(ui_router)
 app.include_router(auth_router)
 app.include_router(vault_router)
 app.include_router(clinical_router)
@@ -84,10 +87,14 @@ def edge_check(request: Request) -> dict[str, object]:
 
 
 @app.get("/", tags=["infraestructura"])
-def root() -> dict[str, object]:
+def root(request: Request, format: str | None = None):
+    accept = request.headers.get("accept", "")
+    if format != "json" and "text/html" in accept and "application/json" not in accept.split(",")[0]:
+        return clinical_portal()
     return {
         "service": settings.app_name,
         "architecture": "Privacy-by-Design & Zero Trust",
+        "portal_url": "/portal",
         "modules": {
             "A": "Gobernanza, WebAuthn/Argon2id, Vault Tokenization & OPA/ABAC",
             "B": "TTL, Safe Harbor + k-Anonimato/l-Diversidad & NIST SP 800-88",

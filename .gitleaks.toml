@@ -1,0 +1,16 @@
+title = "Gitleaks Policy — Privacy-by-Design Zero Trust"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholders explícitos de desarrollo local y fixtures de pruebas sin secretos reales"
+paths = [
+  '''^\.env\.example$''',
+  '''^tests/''',
+  '''^infra/scripts/verify-''',
+  '''^docs/''',
+]
+regexes = [
+  '''dev_[a-z0-9_]+_change_me''',
+]

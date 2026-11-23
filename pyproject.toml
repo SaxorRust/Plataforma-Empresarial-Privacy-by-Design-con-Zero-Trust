@@ -1,0 +1,39 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 110
+
+[tool.ruff.lint]
+# Calidad de código (E/F/W/B/UP), complejidad ciclomática (C90) y seguridad OWASP (S - flake8-bandit)
+select = ["E", "F", "W", "B", "UP", "S", "C90"]
+ignore = [
+    "E501",  # Longitud de línea manejada con flexibilidad para mensajes descriptivos en español
+    "B008",  # FastAPI Depends()/Query()/Header() en firmas de endpoints es patrón idiomático oficial
+    "UP017", # Mantener datetime.timezone.utc explícito por consistencia en todo el proyecto
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.per-file-ignores]
+# En pruebas unitarias se permiten asserts (S101), fixtures de credenciales (S105/S106/S107) y mocks complejos (C901)
+"tests/**" = ["S101", "S105", "S106", "S107", "S108", "C901"]
+# Valores por defecto de entorno de desarrollo sobrescritos por variables de entorno (.env)
+"services/api/app/config.py" = ["S105"]
+"services/api/app/models/auth.py" = ["S105"]
+"services/api/app/security/jwt_auth.py" = ["S105"]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+skips = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.coverage.run]
+source = ["services/api/app", "services/siem/app"]
+omit = ["*/__init__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

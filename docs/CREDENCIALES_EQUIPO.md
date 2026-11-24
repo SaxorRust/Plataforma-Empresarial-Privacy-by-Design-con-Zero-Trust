@@ -19,7 +19,9 @@ Todas las contraseñas cumplen la política **OWASP A07** de la plataforma (mín
 | **`admin_sec`** | `admin_sec` | `AdminSec#2026!ZT` | `mantenimiento_ttl` | SecOps: estado y rotación de llave Transit AEAD en HashiCorp Vault, auditoría OPA y barrido TTL. **Separación de funciones:** acceso a expedientes clínicos bloqueado (`403`). |
 | **`paciente`** | `paciente_demo` | `Paciente#2026!ZT` | `acceso_titular` | Consulta exclusiva de sus propios registros (`resource_owner_match == true`). |
 
-> **Nota Zero Trust sobre `super_admin`:** Aunque `super_admin` puede operar todos los módulos y propósitos válidos (`administracion_total`, `atencion_medica`, `investigacion_estadistica`, `ejercicio_arco`, `mantenimiento_ttl`, `acceso_titular`), **sigue auditándose en el SIEM** y sigue siendo bloqueado por OPA si se envía un `X-Purpose` vacío o indebido (ej. `marketing_comercial`) para poder demostrar la prevención de *Function Creep*.
+> **Nota Zero Trust sobre `super_admin`:**
+> - **Cuenta única (singleton):** El rol `super_admin` está **bloqueado en el registro público** (`POST /auth/register` devuelve `403 Forbidden` y emite la alerta `AUTH_PRIVILEGE_ESCALATION_BLOCKED` en el SIEM), no aparece en el formulario de registro del portal y está restringido a nivel de PostgreSQL mediante el índice único parcial `uq_single_super_admin` para que **nunca pueda existir más de 1 cuenta `super_admin`**.
+> - **Auditoría y prevención de *Function Creep*:** Aunque `super_admin` puede operar todos los módulos y propósitos válidos (`administracion_total`, `atencion_medica`, `investigacion_estadistica`, `ejercicio_arco`, `mantenimiento_ttl`, `acceso_titular`), **sigue auditándose en el SIEM** y sigue siendo bloqueado por OPA si se envía un `X-Purpose` vacío o indebido (ej. `marketing_comercial`).
 
 ---
 

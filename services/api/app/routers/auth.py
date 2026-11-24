@@ -62,6 +62,25 @@ def register_user(
     password_service: Argon2idPasswordService = Depends(get_password_service),
     audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> UserPublicResponse:
+    if payload.role == "super_admin":
+        audit_client.emit_event(
+            msg_id="AUTH_PRIVILEGE_ESCALATION_BLOCKED",
+            message="Intento bloqueado de autorregistro con rol privilegiado super_admin",
+            severity=SYSLOG_SEVERITY_WARNING,
+            actor=payload.username,
+            role="super_admin",
+            action="register",
+            outcome="denied",
+            request=request,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Acceso denegado (Zero Trust): el rol 'super_admin' es único y "
+                "no puede crearse mediante registro público."
+            ),
+        )
+
     password_hash = password_service.hash_password(payload.password)
     try:
         user = repo.create_user(

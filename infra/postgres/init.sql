@@ -20,6 +20,11 @@ CREATE TABLE IF NOT EXISTS auth_identity.users (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Garantiza a nivel de base de datos que solo pueda existir una única cuenta super_admin
+CREATE UNIQUE INDEX IF NOT EXISTS uq_single_super_admin
+    ON auth_identity.users (role)
+    WHERE role = 'super_admin';
+
 -- Credenciales FIDO2 / WebAuthn (Passkeys)
 CREATE TABLE IF NOT EXISTS auth_identity.webauthn_credentials (
     id UUID PRIMARY KEY,

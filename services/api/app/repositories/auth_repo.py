@@ -113,6 +113,19 @@ class PostgresUserRepository:
                         ))
                         """
                     )
+                    cur.execute(
+                        """
+                        DELETE FROM auth_identity.users
+                        WHERE role = 'super_admin' AND username <> 'super_admin'
+                        """
+                    )
+                    cur.execute(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS uq_single_super_admin
+                        ON auth_identity.users (role)
+                        WHERE role = 'super_admin'
+                        """
+                    )
                 conn.commit()
         except psycopg.OperationalError as exc:
             raise DatabaseUnavailableError(

@@ -78,5 +78,6 @@ def test_api_portal_ui_and_static_assets():
     assert "/clinical/records/segregated" in js_resp.text
     assert "setPasswordVisibility" in js_resp.text
     assert "generateSecurePassword" in js_resp.text
+    assert "handlePurposeChange" in js_resp.text
     assert "DEMO_PASSWORD" not in js_resp.text
 

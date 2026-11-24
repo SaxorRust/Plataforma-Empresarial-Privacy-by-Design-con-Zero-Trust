@@ -21,6 +21,24 @@
     super_admin: "administracion_total",
   };
 
+  const PURPOSE_TO_VIEW_ROLE = {
+    administracion_total: "super_admin",
+    atencion_medica: "medico",
+    investigacion_estadistica: "analista",
+    ejercicio_arco: "auditor_arco",
+    mantenimiento_ttl: "admin_sec",
+    acceso_titular: "paciente",
+  };
+
+  const PURPOSE_PREFERRED_TAB = {
+    administracion_total: "tab-auth",
+    atencion_medica: "tab-clinical",
+    investigacion_estadistica: "tab-export",
+    ejercicio_arco: "tab-arco",
+    mantenimiento_ttl: "tab-users",
+    acceso_titular: "tab-clinical",
+  };
+
   const ROLE_DESCRIPTIONS = {
     medico: "Atención clínica completa: alta segregada en Vault+PostgreSQL, lectura/edición de expedientes y resolución PII bajo propósito atencion_medica.",
     enfermeria: "Asistencia clínica minimizada: lectura restringida de departamento y resumen clínico con token opaco enmascarado (pat_xxxx...yyyy).",
@@ -231,17 +249,35 @@
   // --------------------------------------------------------------------------
   // Zero Trust Gate Control: Lock / Unlock Workspace & Role-Based UI Filtering
   // --------------------------------------------------------------------------
-  function applyRoleVisibility(role) {
+  function applyRoleVisibility(role, options) {
+    const opts = options || {};
     const navButtons = document.querySelectorAll(".nav-btn");
+    const visibleTabs = [];
     navButtons.forEach(function (btn) {
       const allowedRoles = (btn.getAttribute("data-roles") || "").split(",");
       const allowed = allowedRoles.includes(role);
       btn.classList.toggle("is-hidden", !allowed);
+      if (allowed) {
+        visibleTabs.push(btn.getAttribute("data-tab"));
+      }
     });
 
     const scopeEl = byId("role-scope-summary");
     if (scopeEl) {
-      scopeEl.textContent = ROLE_DESCRIPTIONS[role] || "Acceso gobernado por OPA/ABAC.";
+      const baseDesc = ROLE_DESCRIPTIONS[role] || "Acceso gobernado por OPA/ABAC.";
+      if (opts.isSuperPreview) {
+        scopeEl.textContent = "Vista filtrada (super_admin → " + role + "): " + baseDesc;
+      } else {
+        scopeEl.textContent = baseDesc;
+      }
+    }
+
+    const roleBadge = byId("session-role-badge");
+    if (roleBadge && state.user) {
+      roleBadge.textContent =
+        state.user.role === "super_admin" && role !== "super_admin"
+          ? "super_admin → " + role
+          : state.user.role;
     }
 
     // Role-specific operational panels (Separación de funciones Zero Trust)
@@ -285,17 +321,62 @@
       }
     }
 
-    const optSuper = byId("opt-admin-role-super");
-    if (optSuper) {
-      optSuper.disabled = !isSuperAdmin;
-      optSuper.hidden = !isSuperAdmin;
-    }
-
     const cardArco = byId("card-arco-erasure");
     if (cardArco) cardArco.classList.toggle("is-hidden", !isAuditor);
 
     const cardCerts = byId("card-certificates-list");
     if (cardCerts) cardCerts.classList.toggle("is-hidden", !isAuditor);
+
+    // Si la pestaña activa quedó oculta tras cambiar el rol visible, cambiar a una pestaña permitida
+    const activePanel = document.querySelector(".tab-panel.active");
+    const activeTabId = activePanel ? activePanel.id : "";
+    if (!activeTabId || !visibleTabs.includes(activeTabId)) {
+      const nextTab =
+        opts.preferredTab && visibleTabs.includes(opts.preferredTab)
+          ? opts.preferredTab
+          : visibleTabs[0] || "tab-auth";
+      switchTab(nextTab);
+      if (nextTab === "tab-users") {
+        loadAdminUsers();
+      }
+    }
+  }
+
+  function handlePurposeChange() {
+    if (!state.user) return;
+    const purpose = getSelectedPurpose();
+    if (state.user.role !== "super_admin") {
+      applyRoleVisibility(state.user.role);
+      if (!purpose || purpose === "marketing_comercial") {
+        showToast(
+          "X-Purpose ajustado para prueba Zero Trust: OPA denegará operaciones clínicas/lifecycle con HTTP 403.",
+          "warn"
+        );
+      }
+      return;
+    }
+
+    if (!purpose || purpose === "marketing_comercial") {
+      applyRoleVisibility("super_admin");
+      showToast(
+        "Modo prueba Function Creep / Default Deny activo (X-Purpose=" + (purpose || "vacío") + "): OPA bloqueará peticiones con HTTP 403.",
+        "warn"
+      );
+      return;
+    }
+
+    const viewRole = PURPOSE_TO_VIEW_ROLE[purpose] || "super_admin";
+    const preferredTab = PURPOSE_PREFERRED_TAB[purpose] || "tab-auth";
+    applyRoleVisibility(viewRole, {
+      isSuperPreview: viewRole !== "super_admin",
+      preferredTab: preferredTab,
+    });
+    showToast(
+      viewRole === "super_admin"
+        ? "Vista completa de super_admin restaurada (todos los módulos visibles)."
+        : "Menús actualizados al contexto de rol '" + viewRole + "' (X-Purpose=" + purpose + ").",
+      "ok"
+    );
   }
 
   function setPasswordVisibility(inputEl, toggleBtn, visible) {
@@ -681,6 +762,10 @@
   async function refreshCurrentUser() {
     const res = await apiRequest("GET", "/auth/me");
     if (res.ok) {
+      if (state.user && res.data.role && state.user.role !== res.data.role) {
+        state.user.role = res.data.role;
+        applyRoleVisibility(state.user.role);
+      }
       byId("auth-me-output").textContent = JSON.stringify(res.data, null, 2);
       showToast("Sesión JWT activa y verificada en /auth/me.", "ok");
     }
@@ -1596,6 +1681,11 @@
     // Authenticated Workspace Handlers
     byId("global-toast-close").addEventListener("click", hideToast);
     byId("btn-top-logout").addEventListener("click", handleLogout);
+
+    const purposeSelect = byId("global-purpose-select");
+    if (purposeSelect) {
+      purposeSelect.addEventListener("change", handlePurposeChange);
+    }
 
     document.querySelectorAll(".nav-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {

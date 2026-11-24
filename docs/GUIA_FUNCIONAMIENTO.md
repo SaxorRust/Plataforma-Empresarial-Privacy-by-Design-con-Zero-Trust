@@ -111,7 +111,7 @@ Cada petición clínica o de ciclo de vida exige **dos cosas**: tu identidad aut
 
 1. **Auto-registro público (`paciente`) y gestión IAM (`admin_sec`):**
    - En `https://tralaleritosmigajeros.uk/` → pestaña **Registrar Cuenta**, el registro público (`POST /auth/register`) está restringido por mínimo privilegio al rol **`paciente`** (cualquier intento de registrar otro rol devuelve `HTTP 403` y dispara `AUTH_PRIVILEGE_ESCALATION_BLOCKED` en el SIEM).
-   - Para cuentas institucionales, inicia sesión con las cuentas precargadas de [CREDENCIALES_EQUIPO.md](CREDENCIALES_EQUIPO.md) (`admin_sec`, `medico_demo`, `enfermeria_demo`, `analista_demo`, `auditor_arco`) o aprovisiona nuevos usuarios institucionales desde **`admin_sec`** en la pestaña **6. Gestión de Cuentas** (`POST /auth/users`). Opcionalmente, registra tu **Passkey FIDO2** en **1. Mi Sesión & Passkeys**.
+   - Para cuentas institucionales, inicia sesión con las cuentas aprovisionadas mediante tu `.env` privado (`admin_sec`, `medico_demo`, `enfermeria_demo`, `analista_demo`, `auditor_arco`) o aprovisiona nuevos usuarios institucionales desde **`admin_sec`** en la pestaña **6. Gestión de Cuentas** (`POST /auth/users`). Opcionalmente, registra tu **Passkey FIDO2** en **1. Mi Sesión & Passkeys**.
 2. **Cargar pacientes segregados (como `medico_demo`):**
    - Ve a **2. Clínica & Bóveda PII** → haz clic en **"+ Cargar Cohorte Clínica (6 Pacientes)"** o llena el formulario de alta segregada.
    - Verifica que en la tabla solo aparece el token opaco `pat_...` y usa **"Resolver PII (Vault)"** para comprobar la detokenización controlada.

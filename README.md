@@ -36,7 +36,7 @@ cp .env.example .env
 # Edita .env y reemplaza los secretos de desarrollo (POSTGRES_PASSWORD, VAULT_DEV_ROOT_TOKEN_ID, ARGON2_PEPPER, JWT_SECRET_KEY)
 ```
 
-> **Nota de seguridad (producción vs. evaluación local):** Por conveniencia de evaluación y pruebas locales, `.env.example` incluye `SEED_DEFAULT_ACCOUNTS=true` (precarga las 6 cuentas de demostración documentadas en [`docs/CREDENCIALES_EQUIPO.md`](docs/CREDENCIALES_EQUIPO.md)). En entornos productivos expuestos a Internet se recomienda definir un `SEED_ACCOUNTS_SUFFIX` privado o desactivar la precarga (`SEED_DEFAULT_ACCOUNTS=false`) tras aprovisionar cuentas institucionales con `admin_sec`.
+> **Nota de seguridad (Zero Trust):** El repositorio público **no contiene contraseñas precargadas** (`SEED_DEFAULT_ACCOUNTS=false` y `SEED_ACCOUNTS_SUFFIX=""` por defecto). Para inicializar cuentas base en un despliegue nuevo, define `SEED_DEFAULT_ACCOUNTS=true` y un `SEED_ACCOUNTS_SUFFIX` secreto en tu archivo `.env` privado (ignorado por Git) antes de arrancar los contenedores, o aprovisiona cuentas institucionales desde `admin_sec` en `POST /auth/users`.
 
 ### 2. Levantar la plataforma (con Seccomp-BPF activo)
 ```bash
@@ -69,7 +69,7 @@ opa check --strict infra/opa/policies
 opa test -v infra/opa/policies
 ```
 
-Scripts de verificación end-to-end contra despliegue local o dominio productivo:
+Scripts de verificación end-to-end contra despliegue local o dominio productivo (toman `PROVISION_PASS` del entorno o `SEED_ACCOUNTS_SUFFIX` desde `.env` local):
 - `./infra/scripts/verify-ma01-ma02.sh` — Autenticación Argon2id/JWT/WebAuthn + Bóveda Vault Transit AEAD y KV v2.
 - `./infra/scripts/verify-module-a.sh` — OPA *Fail-Closed*, alta segregada, bloqueo de *Function Creep* y minimización por rol.
 - `./infra/scripts/verify-module-b.sh` — Barrido TTL, exportación Safe Harbor + $(k, l)$, borrado ARCO NIST SP 800-88 y certificados JSON/PDF `SHA-256`.
@@ -83,8 +83,6 @@ Scripts de verificación end-to-end contra despliegue local o dominio productivo
 
 - **[Documentación Técnica Completa (PDF)](docs/DOCUMENTACION_TECNICA.pdf)** · **[Versión Markdown](docs/DOCUMENTACION_TECNICA.md)**
 - **[Matriz de Roles y Permisos (6 roles ABAC Zero Trust)](docs/MATRIZ_ROLES_PERMISOS.md)**
-- **[Credenciales Genéricas de Evaluación](docs/CREDENCIALES_EQUIPO.md)**
 - **[Guía de Funcionamiento del Sistema](docs/GUIA_FUNCIONAMIENTO.md)**
 - **[Checklist Maestro de Trazabilidad](docs/CHECKLIST.md)** · **[Planeación](docs/planeacion.md)**
 - **[Aprovisionamiento de VM Ubuntu](docs/aprovisionamiento-vm.md)** · **[Endurecimiento Cloudflare](docs/hardening-cloudflare.md)**
-- **Material de Defensa Técnica y Demo en Vivo:** [Guion 20 min](docs/defensa/GUION_DEMO_20MIN.md) · [Guía Jezreel](docs/defensa/GUIA_DEFENSA_JEZREEL.md) · [Guía Ubaldo](docs/defensa/GUIA_DEFENSA_UBALDO.md) · [Guía Samuel](docs/defensa/GUIA_DEFENSA_SAMUEL.md)

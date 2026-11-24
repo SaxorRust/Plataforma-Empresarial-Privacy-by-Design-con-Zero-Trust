@@ -20,14 +20,16 @@
 
 ## 2. Resumen Rápido de los 6 Roles
 
-| Rol (`role`) | Cuenta precargada | Contraseña inicial | `X-Purpose` obligatorio | Dominio Principal | Pestañas visibles en `/portal` |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`medico`** | `medico_demo` | `Medico#2026!ZT` | `atencion_medica` | Atención clínica integral y resolución PII en Vault | 1. Sesión · 2. Clínica & Bóveda PII |
-| **`enfermeria`** | `enfermeria_demo` | `Enfermeria#2026!ZT` | `atencion_medica` | Lectura clínica asistencial minimizada | 1. Sesión · 2. Clínica & Bóveda PII |
-| **`analista`** | `analista_demo` | `Analista#2026!ZT` | `investigacion_estadistica` | Analítica poblacional y exportación Safe Harbor + $(k, l)$ | 1. Sesión · 2. Clínica (vista generalizada) · 4. Safe Harbor & $(k, l)$ |
-| **`auditor_arco`** | `auditor_arco` | `AuditorArco#2026!ZT` | `ejercicio_arco` | Cumplimiento, derechos ARCO, borrado NIST SP 800-88 y certificados | 1. Sesión · 2. Metadatos · 3. OPA · 5. ARCO, TTL & NIST 800-88 |
-| **`admin_sec`** | `admin_sec` | `AdminSec#2026!ZT` | `mantenimiento_ttl` | SecOps e IAM: cuentas/roles, rotación Vault, OPA y barrido TTL | 1. Sesión · 2. Estado/Rotación Vault · 3. OPA · 5. TTL · 6. Gestión de Cuentas |
-| **`paciente`** | `paciente_demo` | `Paciente#2026!ZT` | `acceso_titular` | Consulta exclusiva de su propio expediente | 1. Sesión · 2. Mi Expediente |
+| Rol (`role`) | Cuenta base | `X-Purpose` obligatorio | Dominio Principal | Pestañas visibles en `/portal` |
+| :--- | :--- | :--- | :--- | :--- |
+| **`medico`** | `medico_demo` | `atencion_medica` | Atención clínica integral y resolución PII en Vault | 1. Sesión · 2. Clínica & Bóveda PII |
+| **`enfermeria`** | `enfermeria_demo` | `atencion_medica` | Lectura clínica asistencial minimizada | 1. Sesión · 2. Clínica & Bóveda PII |
+| **`analista`** | `analista_demo` | `investigacion_estadistica` | Analítica poblacional y exportación Safe Harbor + $(k, l)$ | 1. Sesión · 2. Clínica (vista generalizada) · 4. Safe Harbor & $(k, l)$ |
+| **`auditor_arco`** | `auditor_arco` | `ejercicio_arco` | Cumplimiento, derechos ARCO, borrado NIST SP 800-88 y certificados | 1. Sesión · 2. Metadatos · 3. OPA · 5. ARCO, TTL & NIST 800-88 |
+| **`admin_sec`** | `admin_sec` | `mantenimiento_ttl` | SecOps e IAM: cuentas/roles, rotación Vault, OPA y barrido TTL | 1. Sesión · 2. Estado/Rotación Vault · 3. OPA · 5. TTL · 6. Gestión de Cuentas |
+| **`paciente`** | `paciente_demo` | `acceso_titular` | Consulta exclusiva de su propio expediente | 1. Sesión · 2. Mi Expediente |
+
+> **Gestión de credenciales (Zero Trust):** Las contraseñas de las cuentas institucionales **no se almacenan en el repositorio público**; se aprovisionan mediante `SEED_DEFAULT_ACCOUNTS=true` + un `SEED_ACCOUNTS_SUFFIX` privado en el archivo `.env` local (ignorado por Git) o directamente por `admin_sec` en `POST /auth/users`.
 
 ---
 

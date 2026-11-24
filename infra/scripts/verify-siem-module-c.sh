@@ -100,7 +100,16 @@ echo "--- 4. MC-04 (Regla 2): Simulación de consultas masivas de expedientes ->
 MASS_USER="dr_mass_${SUFFIX}"
 STRONG_PASS="Hospital!2026#ZeroTrust"
 PROVISION_USER="${PROVISION_USER:-admin_sec}"
-PROVISION_PASS="${PROVISION_PASS:-AdminSec#2026!ZT}"
+if [[ -z "${PROVISION_PASS:-}" && -f .env ]]; then
+  ENV_SUFFIX="$(grep -E '^SEED_ACCOUNTS_SUFFIX=' .env | tail -n 1 | cut -d'=' -f2- | tr -d '\r"' | tr -d "'")"
+  if [[ -n "${ENV_SUFFIX}" ]]; then
+    PROVISION_PASS="AdminSec${ENV_SUFFIX}"
+  fi
+fi
+if [[ -z "${PROVISION_PASS:-}" ]]; then
+  echo "[FAIL] Define PROVISION_PASS o SEED_ACCOUNTS_SUFFIX en .env antes de ejecutar este script"
+  exit 1
+fi
 PROVISION_TOKEN="$(curl -s -X POST "${API_URL}/auth/login" \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"${PROVISION_USER}\",\"password\":\"${PROVISION_PASS}\"}" | jq -r '.access_token // empty')"

@@ -27,20 +27,26 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     if settings.seed_default_accounts:
-        repo_provider = application.dependency_overrides.get(
-            get_user_repository, get_user_repository
-        )
-        pwd_provider = application.dependency_overrides.get(
-            get_password_service, get_password_service
-        )
-        try:
-            seed_default_team_accounts(
-                repo_provider(),
-                pwd_provider(),
-                suffix=settings.seed_accounts_suffix,
+        if not settings.seed_accounts_suffix.strip():
+            logger.warning(
+                "SEED_DEFAULT_ACCOUNTS=true pero SEED_ACCOUNTS_SUFFIX está vacío; "
+                "se omite la precarga inicial por seguridad."
             )
-        except DatabaseUnavailableError as exc:
-            logger.warning("Se omitió el seed inicial de cuentas (BD no disponible): %s", exc)
+        else:
+            repo_provider = application.dependency_overrides.get(
+                get_user_repository, get_user_repository
+            )
+            pwd_provider = application.dependency_overrides.get(
+                get_password_service, get_password_service
+            )
+            try:
+                seed_default_team_accounts(
+                    repo_provider(),
+                    pwd_provider(),
+                    suffix=settings.seed_accounts_suffix,
+                )
+            except DatabaseUnavailableError as exc:
+                logger.warning("Se omitió el seed inicial de cuentas (BD no disponible): %s", exc)
 
     ttl_provider = application.dependency_overrides.get(
         get_ttl_sweep_service, get_ttl_sweep_service

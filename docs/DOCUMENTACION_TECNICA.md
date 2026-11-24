@@ -348,7 +348,7 @@ Las siguientes capturas documentan la transición desde tráfico sin reglas pers
 | **Módulo A:** Gobernanza, Minimización y Control de Acceso | 20% | `MA-01` (WebAuthn + Argon2id/Pepper + IAM sin `super_admin` + timeout 2m), `MA-02` (Vault Transit+KV v2), `MA-03` (OPA Fail-Closed 15/15), `MA-04` (Minimización cuantitativa/cualitativa) | **100% Completado** |
 | **Módulo B:** Ciclo de Vida, Desidentificación y Borrado Certificado | 25% | `MB-01` (TTL automático), `MB-02` (Safe Harbor + $k$-anonimato/$l$-diversidad), `MB-03` (ARCO + NIST SP 800-88 + limpieza RAM), `MB-04` (Certificados JSON/PDF SHA-256) | **100% Completado** |
 | **Módulo C:** Sandboxing de Aplicación y Auditoría SIEM | 25% | `MC-01` (Seccomp-BPF + AppArmor), `MC-02` (Syslog RFC 5424), `MC-03` (Sanitización Regex pre-persistencia), `MC-04` (3 reglas de correlación temporal + SOC `America/Mexico_City`) | **100% Completado** |
-| **Documentación, Evidencias y Defensa Técnica** | 30% | Reporte técnico MD + PDF con 2 diagramas, certificado NIST completo, evidencias E2E + 4 capturas Cloudflare, guías de defensa por rol y guion de demo de 20 min | **100% Completado** |
+| **Documentación, Evidencias y Defensa Técnica** | 30% | Reporte técnico MD + PDF con 2 diagramas de arquitectura, certificado NIST verificable, evidencias E2E + 4 capturas Cloudflare, matriz de roles Zero Trust y preparación de demo en vivo (20 min) | **100% Completado** |
 
 ### Conclusiones
 

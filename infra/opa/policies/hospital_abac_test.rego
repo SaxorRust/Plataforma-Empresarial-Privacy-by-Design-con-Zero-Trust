@@ -170,50 +170,52 @@ test_medico_cannot_erase_or_export_anonymized if {
 	d_exp.allow == false
 }
 
-test_super_admin_full_operational_access if {
+test_super_admin_denied_clinical_and_lifecycle_separation_of_duties if {
 	d_read := decision with input as {
 		"role": "super_admin",
-		"purpose": "administracion_total",
+		"purpose": "atencion_medica",
 		"action": "read_record",
 		"resource_purpose": "atencion_medica",
-		"is_sanitized": true,
 	}
-	d_read.allow == true
-	d_read.generalize_fields == false
-	d_read.mask_token == false
-	"diagnosis_cie10" in d_read.allowed_fields
-	"opaque_patient_token" in d_read.allowed_fields
-	"is_sanitized" in d_read.allowed_fields
+	d_read.allow == false
+	d_read.allowed_fields == []
+
+	d_detok := decision with input as {
+		"role": "super_admin",
+		"purpose": "atencion_medica",
+		"action": "detokenize_pii",
+	}
+	d_detok.allow == false
 
 	d_erase := decision with input as {
 		"role": "super_admin",
-		"purpose": "administracion_total",
+		"purpose": "ejercicio_arco",
 		"action": "erase_nist_800_88",
 	}
-	d_erase.allow == true
+	d_erase.allow == false
 
 	d_exp := decision with input as {
 		"role": "super_admin",
-		"purpose": "administracion_total",
+		"purpose": "investigacion_estadistica",
 		"action": "export_anonymized",
 	}
-	d_exp.allow == true
+	d_exp.allow == false
 }
 
-test_super_admin_still_requires_valid_purpose if {
+test_super_admin_denied_with_iam_purpose_on_clinical if {
+	d_iam := decision with input as {
+		"role": "super_admin",
+		"purpose": "gestion_identidades",
+		"action": "read_record",
+	}
+	d_iam.allow == false
+
 	d_empty := decision with input as {
 		"role": "super_admin",
 		"purpose": "",
 		"action": "read_record",
 	}
 	d_empty.allow == false
-
-	d_mkt := decision with input as {
-		"role": "super_admin",
-		"purpose": "marketing_comercial",
-		"action": "read_record",
-	}
-	d_mkt.allow == false
 }
 
 

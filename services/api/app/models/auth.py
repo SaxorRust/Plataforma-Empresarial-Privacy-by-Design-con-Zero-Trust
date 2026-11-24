@@ -106,7 +106,7 @@ class AdminUserCreateRequest(BaseModel):
     )
     role: UserRole = Field(
         ...,
-        description="Rol institucional asignado por super_admin o admin_sec.",
+        description="Rol institucional asignado exclusivamente por super_admin (IAM).",
     )
 
     @field_validator("password")

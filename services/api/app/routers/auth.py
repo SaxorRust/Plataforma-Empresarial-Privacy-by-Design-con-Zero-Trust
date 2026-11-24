@@ -552,10 +552,10 @@ def _assert_super_admin_guard(
 @router.get(
     "/users",
     response_model=list[UserPublicResponse],
-    summary="Listar cuentas institucionales registradas (solo admin_sec o super_admin)",
+    summary="Listar cuentas institucionales registradas (exclusivo super_admin IAM)",
 )
 def admin_list_users(
-    _actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
+    _actor: AuthenticatedUser = Depends(require_roles("super_admin")),
     repo: UserRepository = Depends(get_user_repository),
 ) -> list[UserPublicResponse]:
     try:
@@ -571,12 +571,12 @@ def admin_list_users(
     "/users",
     response_model=UserPublicResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Aprovisionar cuenta institucional con rol ABAC (solo admin_sec o super_admin)",
+    summary="Aprovisionar cuenta institucional con rol ABAC (exclusivo super_admin IAM)",
 )
 def admin_create_user(
     payload: AdminUserCreateRequest,
     request: Request,
-    actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
+    actor: AuthenticatedUser = Depends(require_roles("super_admin")),
     repo: UserRepository = Depends(get_user_repository),
     password_service: Argon2idPasswordService = Depends(get_password_service),
     audit_client: SyslogAuditClient = Depends(get_audit_client),
@@ -613,13 +613,13 @@ def admin_create_user(
 @router.patch(
     "/users/{user_id}",
     response_model=UserPublicResponse,
-    summary="Actualizar rol o estado activo de una cuenta y revocar sus sesiones activas",
+    summary="Actualizar rol o estado activo de una cuenta y revocar sus sesiones (exclusivo super_admin)",
 )
 def admin_update_user(
     user_id: UUID,
     payload: AdminUserUpdateRequest,
     request: Request,
-    actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
+    actor: AuthenticatedUser = Depends(require_roles("super_admin")),
     repo: UserRepository = Depends(get_user_repository),
     jwt_service: JWTService = Depends(get_jwt_service),
     audit_client: SyslogAuditClient = Depends(get_audit_client),
@@ -693,12 +693,12 @@ def admin_update_user(
 @router.post(
     "/users/{user_id}/revoke-sessions",
     response_model=AdminRevokeSessionsResponse,
-    summary="Revocar inmediatamente todas las sesiones JWT activas de un usuario",
+    summary="Revocar inmediatamente todas las sesiones JWT activas de un usuario (exclusivo super_admin)",
 )
 def admin_revoke_user_sessions(
     user_id: UUID,
     request: Request,
-    actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
+    actor: AuthenticatedUser = Depends(require_roles("super_admin")),
     repo: UserRepository = Depends(get_user_repository),
     jwt_service: JWTService = Depends(get_jwt_service),
     audit_client: SyslogAuditClient = Depends(get_audit_client),

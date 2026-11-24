@@ -67,6 +67,19 @@ def test_owasp_a01_broken_access_control():
         ).status_code
         == 403
     )
+    assert (
+        client.get(
+            "/clinical/records", headers=headers_for("super_admin", "atencion_medica")
+        ).status_code
+        == 403
+    )
+    assert (
+        client.get(
+            "/vault/patients/pat_" + "a" * 32,
+            headers=headers_for("super_admin", "gestion_identidades"),
+        ).status_code
+        == 403
+    )
 
     # 4. Path traversal / inyección de ruta en token opaco de Vault -> 400 o 404
     medico_headers = headers_for("medico", "atencion_medica")

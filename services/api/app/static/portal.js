@@ -18,25 +18,7 @@
     auditor_arco: "ejercicio_arco",
     admin_sec: "mantenimiento_ttl",
     paciente: "acceso_titular",
-    super_admin: "administracion_total",
-  };
-
-  const PURPOSE_TO_VIEW_ROLE = {
-    administracion_total: "super_admin",
-    atencion_medica: "medico",
-    investigacion_estadistica: "analista",
-    ejercicio_arco: "auditor_arco",
-    mantenimiento_ttl: "admin_sec",
-    acceso_titular: "paciente",
-  };
-
-  const PURPOSE_PREFERRED_TAB = {
-    administracion_total: "tab-auth",
-    atencion_medica: "tab-clinical",
-    investigacion_estadistica: "tab-export",
-    ejercicio_arco: "tab-arco",
-    mantenimiento_ttl: "tab-users",
-    acceso_titular: "tab-clinical",
+    super_admin: "gestion_identidades",
   };
 
   const ROLE_DESCRIPTIONS = {
@@ -44,9 +26,9 @@
     enfermeria: "Asistencia clínica minimizada: lectura restringida de departamento y resumen clínico con token opaco enmascarado (pat_xxxx...yyyy).",
     analista: "Analítica poblacional: lecturas generalizadas (rango de edad, CP 2 dígitos) sin acceso individual y exportación HIPAA Safe Harbor + (k, l).",
     auditor_arco: "Cumplimiento y auditoría: evaluación OPA, barrido TTL, borrado certificado ARCO/NIST SP 800-88 y descarga/verificación SHA-256 de certificados.",
-    admin_sec: "Operaciones de seguridad (SecOps): gestión de bóveda Vault, evaluación OPA y barrido TTL. Separación de funciones: acceso clínico bloqueado (403).",
+    admin_sec: "Operaciones de seguridad (SecOps): estado y rotación de llave Transit en Vault, evaluación OPA y barrido TTL. Separación de funciones: sin datos clínicos ni PII.",
     paciente: "Acceso de titular: consulta exclusiva de sus propios registros bajo propósito acceso_titular.",
-    super_admin: "Super Administrador (Acceso Total): operación completa en Clínica/Vault, OPA/ABAC, Safe Harbor/(k, l), ARCO/NIST SP 800-88 y TTL con trazabilidad SIEM.",
+    super_admin: "Gestor de Cuentas y Roles (IAM): alta de personal institucional, asignación/cambio de roles ABAC, suspensión y revocación de sesiones JWT. Separación de funciones Zero Trust: sin acceso a datos clínicos, PII ni ARCO.",
   };
 
   const DEMO_COHORT = [
@@ -249,8 +231,7 @@
   // --------------------------------------------------------------------------
   // Zero Trust Gate Control: Lock / Unlock Workspace & Role-Based UI Filtering
   // --------------------------------------------------------------------------
-  function applyRoleVisibility(role, options) {
-    const opts = options || {};
+  function applyRoleVisibility(role) {
     const navButtons = document.querySelectorAll(".nav-btn");
     const visibleTabs = [];
     navButtons.forEach(function (btn) {
@@ -264,27 +245,18 @@
 
     const scopeEl = byId("role-scope-summary");
     if (scopeEl) {
-      const baseDesc = ROLE_DESCRIPTIONS[role] || "Acceso gobernado por OPA/ABAC.";
-      if (opts.isSuperPreview) {
-        scopeEl.textContent = "Vista filtrada (super_admin → " + role + "): " + baseDesc;
-      } else {
-        scopeEl.textContent = baseDesc;
-      }
+      scopeEl.textContent = ROLE_DESCRIPTIONS[role] || "Acceso gobernado por OPA/ABAC.";
     }
 
     const roleBadge = byId("session-role-badge");
     if (roleBadge && state.user) {
-      roleBadge.textContent =
-        state.user.role === "super_admin" && role !== "super_admin"
-          ? "super_admin → " + role
-          : state.user.role;
+      roleBadge.textContent = state.user.role;
     }
 
-    // Role-specific operational panels (Separación de funciones Zero Trust)
-    const isSuperAdmin = role === "super_admin";
-    const isMedico = role === "medico" || isSuperAdmin;
-    const isAdmin = role === "admin_sec" || isSuperAdmin;
-    const isAuditor = role === "auditor_arco" || isSuperAdmin;
+    // Role-specific operational panels (Separación estricta de funciones Zero Trust)
+    const isMedico = role === "medico";
+    const isAdmin = role === "admin_sec";
+    const isAuditor = role === "auditor_arco";
 
     const cardSegregated = byId("card-segregated-admission");
     if (cardSegregated) cardSegregated.classList.toggle("is-hidden", !isMedico);
@@ -296,9 +268,9 @@
     if (cardVault) cardVault.classList.toggle("is-hidden", !(isMedico || isAdmin || isAuditor));
 
     // Filtrado granular dentro de Bóveda Vault:
-    // - Estado Vault: admin_sec, auditor_arco, super_admin (NO medico)
-    // - Rotar Llave Transit: admin_sec, super_admin (NO medico ni auditor_arco)
-    // - Detokenizar PII: SOLO medico y super_admin (NO admin_sec ni auditor_arco)
+    // - Estado Vault: admin_sec y auditor_arco
+    // - Rotar Llave Transit: exclusivamente admin_sec
+    // - Detokenizar PII: exclusivamente medico
     const btnVaultStatus = byId("btn-vault-status");
     if (btnVaultStatus) btnVaultStatus.classList.toggle("is-hidden", !(isAdmin || isAuditor));
 
@@ -310,10 +282,8 @@
 
     const vaultDesc = byId("vault-inspector-desc");
     if (vaultDesc) {
-      if (isSuperAdmin) {
-        vaultDesc.textContent = "Acceso total de bóveda: estado, rotación Transit AEAD y detokenización PII auditada en SIEM.";
-      } else if (role === "medico") {
-        vaultDesc.textContent = "Resolución de identidad clínica (detokenización PII) bajo control de rol medico y trazabilidad SIEM.";
+      if (role === "medico") {
+        vaultDesc.textContent = "Resolución de identidad clínica (detokenización PII) bajo control exclusivo del rol medico y trazabilidad SIEM.";
       } else if (role === "admin_sec") {
         vaultDesc.textContent = "Operaciones SecOps de bóveda (estado y rotación de llave Transit). Separación de funciones: sin acceso a PII.";
       } else if (role === "auditor_arco") {
@@ -327,56 +297,22 @@
     const cardCerts = byId("card-certificates-list");
     if (cardCerts) cardCerts.classList.toggle("is-hidden", !isAuditor);
 
-    // Si la pestaña activa quedó oculta tras cambiar el rol visible, cambiar a una pestaña permitida
     const activePanel = document.querySelector(".tab-panel.active");
     const activeTabId = activePanel ? activePanel.id : "";
     if (!activeTabId || !visibleTabs.includes(activeTabId)) {
-      const nextTab =
-        opts.preferredTab && visibleTabs.includes(opts.preferredTab)
-          ? opts.preferredTab
-          : visibleTabs[0] || "tab-auth";
-      switchTab(nextTab);
-      if (nextTab === "tab-users") {
-        loadAdminUsers();
-      }
+      switchTab(visibleTabs[0] || "tab-auth");
     }
   }
 
   function handlePurposeChange() {
     if (!state.user) return;
     const purpose = getSelectedPurpose();
-    if (state.user.role !== "super_admin") {
-      applyRoleVisibility(state.user.role);
-      if (!purpose || purpose === "marketing_comercial") {
-        showToast(
-          "X-Purpose ajustado para prueba Zero Trust: OPA denegará operaciones clínicas/lifecycle con HTTP 403.",
-          "warn"
-        );
-      }
-      return;
-    }
-
     if (!purpose || purpose === "marketing_comercial") {
-      applyRoleVisibility("super_admin");
       showToast(
-        "Modo prueba Function Creep / Default Deny activo (X-Purpose=" + (purpose || "vacío") + "): OPA bloqueará peticiones con HTTP 403.",
+        "X-Purpose ajustado para prueba Zero Trust: OPA denegará operaciones clínicas/lifecycle con HTTP 403.",
         "warn"
       );
-      return;
     }
-
-    const viewRole = PURPOSE_TO_VIEW_ROLE[purpose] || "super_admin";
-    const preferredTab = PURPOSE_PREFERRED_TAB[purpose] || "tab-auth";
-    applyRoleVisibility(viewRole, {
-      isSuperPreview: viewRole !== "super_admin",
-      preferredTab: preferredTab,
-    });
-    showToast(
-      viewRole === "super_admin"
-        ? "Vista completa de super_admin restaurada (todos los módulos visibles)."
-        : "Menús actualizados al contexto de rol '" + viewRole + "' (X-Purpose=" + purpose + ").",
-      "ok"
-    );
   }
 
   function setPasswordVisibility(inputEl, toggleBtn, visible) {
@@ -580,11 +516,18 @@
 
     byId("auth-gate").classList.add("is-hidden");
     byId("app-shell").classList.remove("is-hidden");
-    switchTab("tab-auth");
+    if (state.user.role === "super_admin") {
+      switchTab("tab-users");
+    } else {
+      switchTab("tab-auth");
+    }
 
     byId("auth-me-output").textContent = JSON.stringify(meRes.data, null, 2);
     await refreshTelemetry();
     await refreshWebAuthnCredentials();
+    if (state.user.role === "super_admin") {
+      await loadAdminUsers();
+    }
     showToast(
       "Identidad verificada: " + state.user.username + " [rol=" + state.user.role + ", amr=" + state.amr.join("+") + "]",
       "ok"
@@ -1015,7 +958,7 @@
       const btnWrap = document.createElement("div");
       btnWrap.className = "btn-row btn-row-flush";
 
-      if (rec.record_id && state.user && (state.user.role === "medico" || state.user.role === "super_admin")) {
+      if (rec.record_id && state.user && state.user.role === "medico") {
         const btnPii = document.createElement("button");
         btnPii.type = "button";
         btnPii.className = "btn btn-secondary btn-sm";
@@ -1026,7 +969,7 @@
         btnWrap.appendChild(btnPii);
       }
 
-      if (rec.opaque_patient_token && !String(rec.opaque_patient_token).includes("...") && state.user && (state.user.role === "auditor_arco" || state.user.role === "super_admin")) {
+      if (rec.opaque_patient_token && !String(rec.opaque_patient_token).includes("...") && state.user && state.user.role === "auditor_arco") {
         const btnArco = document.createElement("button");
         btnArco.type = "button";
         btnArco.className = "btn btn-danger btn-sm";
@@ -1116,7 +1059,7 @@
         showToast("Cohorte clínica de " + created + " pacientes creada (PII aislada en Vault + atributos en PostgreSQL).", "ok");
         await loadClinicalRecords();
       } else {
-        showToast("No se pudo crear la cohorte (verifica rol medico/super_admin y propósito atencion_medica).", "warn");
+        showToast("No se pudo crear la cohorte (verifica rol medico y propósito atencion_medica).", "warn");
       }
     } finally {
       cohortSeedInProgress = false;
@@ -1457,7 +1400,7 @@
         sel.className = "admin-role-select";
         sel.setAttribute("aria-label", "Rol para " + u.username);
         ALL_ROLES.forEach(function (roleOpt) {
-          if (roleOpt === "super_admin" && !actorIsSuper) return;
+          if (roleOpt === "super_admin") return;
           const opt = document.createElement("option");
           opt.value = roleOpt;
           opt.textContent = roleOpt;
@@ -1784,7 +1727,7 @@
         byId("tel-vault-key").textContent = res.data.transit_key + " v" + res.data.latest_key_version;
         showToast("HashiCorp Vault operativo (Transit + KV v2).", "ok");
       } else {
-        const detail = res.data && res.data.detail ? res.data.detail : "Requiere rol admin_sec, auditor_arco o super_admin.";
+        const detail = res.data && res.data.detail ? res.data.detail : "Requiere rol admin_sec o auditor_arco.";
         showToast("HTTP " + res.status + ": " + detail, "warn");
       }
     });
@@ -1796,7 +1739,7 @@
         byId("tel-vault-key").textContent = res.data.transit_key + " v" + res.data.latest_key_version;
         showToast("Llave Transit AEAD rotada a versión v" + res.data.latest_key_version, "ok");
       } else {
-        const detail = res.data && res.data.detail ? res.data.detail : "Requiere rol admin_sec o super_admin.";
+        const detail = res.data && res.data.detail ? res.data.detail : "Requiere rol admin_sec.";
         showToast("HTTP " + res.status + ": " + detail, "warn");
       }
     });

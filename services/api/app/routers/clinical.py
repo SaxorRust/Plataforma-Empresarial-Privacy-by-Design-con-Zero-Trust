@@ -338,7 +338,7 @@ def list_clinical_records(
             )
         opaque_patient_token = opaque_patient_token.strip()
 
-    allow_sanitized_query = include_sanitized and actor.role in {"auditor_arco", "super_admin"}
+    allow_sanitized_query = include_sanitized and actor.role == "auditor_arco"
     try:
         records = clinical_repo.list_records(
             department=department,

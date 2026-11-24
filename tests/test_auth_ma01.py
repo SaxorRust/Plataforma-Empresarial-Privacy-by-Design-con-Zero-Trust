@@ -575,18 +575,19 @@ def test_admin_user_management_and_session_inactivity_timeout():
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     medico_headers = {"Authorization": f"Bearer {medico_token}"}
 
-    # Médico NO puede listar ni crear usuarios -> 403
+    # Médico y admin_sec NO pueden listar ni crear usuarios (IAM exclusivo super_admin) -> 403
     assert client.get("/auth/users", headers=medico_headers).status_code == 403
+    assert client.get("/auth/users", headers=admin_headers).status_code == 403
 
-    # admin_sec puede listar usuarios y crear rol médico, pero NO puede crear super_admin -> 403
-    users_list = client.get("/auth/users", headers=admin_headers)
+    # super_admin lista cuentas y aprovisiona roles, pero NO puede crear un segundo super_admin -> 403
+    users_list = client.get("/auth/users", headers=super_headers)
     assert users_list.status_code == 200
     assert len(users_list.json()) == 7
 
     assert (
         client.post(
             "/auth/users",
-            headers=admin_headers,
+            headers=super_headers,
             json={
                 "username": "fake_super",
                 "password": "SuperFake#2026!ZT",
@@ -598,7 +599,7 @@ def test_admin_user_management_and_session_inactivity_timeout():
 
     created = client.post(
         "/auth/users",
-        headers=admin_headers,
+        headers=super_headers,
         json={
             "username": "dra_nueva",
             "password": "DoctoraNueva#2026!ZT",
@@ -630,7 +631,7 @@ def test_admin_user_management_and_session_inactivity_timeout():
     # Suspender cuenta impide login posterior
     patch_suspend = client.patch(
         f"/auth/users/{new_user_id}",
-        headers=admin_headers,
+        headers=super_headers,
         json={"is_active": False},
     )
     assert patch_suspend.status_code == 200

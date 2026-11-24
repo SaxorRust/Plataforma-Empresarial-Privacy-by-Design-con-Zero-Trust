@@ -11,17 +11,17 @@ Todas las contraseñas cumplen la política **OWASP A07** de la plataforma (mín
 
 | Rol (`role`) | Usuario (`username`) | Contraseña (`password`) | Cabecera `X-Purpose` por defecto | Alcance y Módulos Autorizados |
 | :--- | :--- | :--- | :--- | :--- |
-| **`super_admin`** | `super_admin` | `SuperAdmin#2026!ZT` | `administracion_total` | **Acceso total a todos los módulos:** Clínica/Vault (crear, leer, detokenizar PII, ver sanitizados), OPA/ABAC, Safe Harbor + $(k, l)$, Borrado ARCO NIST SP 800-88, Certificados y TTL. |
-| **`medico`** | `medico_demo` | `Medico#2026!ZT` | `atencion_medica` | Alta segregada (Vault + PostgreSQL), lectura/edición de expedientes clínicos completos y detokenización de PII en Vault. |
+| **`super_admin`** | `super_admin` | `SuperAdmin#2026!ZT` | `gestion_identidades` | **Gestor exclusivo de Cuentas y Roles (IAM):** alta de personal institucional, asignación/cambio de roles ABAC, suspensión de cuentas y revocación inmediata de sesiones JWT (`/auth/users`). **Separación de funciones Zero Trust:** bloqueado (`403`) en datos clínicos, Vault PII, Safe Harbor y ARCO. |
+| **`medico`** | `medico_demo` | `Medico#2026!ZT` | `atencion_medica` | Alta segregada (Vault + PostgreSQL), lectura/edición de expedientes clínicos completos y detokenización exclusiva de PII en Vault. |
 | **`enfermeria`** | `enfermeria_demo` | `Enfermeria#2026!ZT` | `atencion_medica` | Lectura clínica minimizada (solo 4 columnas: `record_id`, `opaque_patient_token` enmascarado `pat_xxxx...yyyy`, `department`, `diagnosis_summary`). |
 | **`analista`** | `analista_demo` | `Analista#2026!ZT` | `investigacion_estadistica` | Listado generalizado (`age_range`, `zip_generalized`) y exportación estadística **HIPAA Safe Harbor + $(k, l)$** en JSON/CSV. Bloqueado para consultas individuales (*anti-singling-out*). |
 | **`auditor_arco`** | `auditor_arco` | `AuditorArco#2026!ZT` | `ejercicio_arco` | Auditoría OPA, barrido TTL, borrado certificado **ARCO / NIST SP 800-88** (`CLEAR`/`PURGE`), descarga PDF/JSON y verificación `SHA-256` de certificados. Sin acceso a diagnósticos clínicos. |
-| **`admin_sec`** | `admin_sec` | `AdminSec#2026!ZT` | `mantenimiento_ttl` | SecOps: estado y rotación de llave Transit AEAD en HashiCorp Vault, auditoría OPA y barrido TTL. **Separación de funciones:** acceso a expedientes clínicos bloqueado (`403`). |
+| **`admin_sec`** | `admin_sec` | `AdminSec#2026!ZT` | `mantenimiento_ttl` | SecOps: estado y rotación de llave Transit AEAD en HashiCorp Vault, auditoría OPA y barrido TTL. **Separación de funciones:** acceso a expedientes clínicos, PII y gestión IAM bloqueado (`403`). |
 | **`paciente`** | `paciente_demo` | `Paciente#2026!ZT` | `acceso_titular` | Consulta exclusiva de sus propios registros (`resource_owner_match == true`). |
 
-> **Nota Zero Trust sobre `super_admin`:**
-> - **Cuenta única (singleton):** El rol `super_admin` está **bloqueado en el registro público** (`POST /auth/register` devuelve `403 Forbidden` y emite la alerta `AUTH_PRIVILEGE_ESCALATION_BLOCKED` en el SIEM), no aparece en el formulario de registro del portal y está restringido a nivel de PostgreSQL mediante el índice único parcial `uq_single_super_admin` para que **nunca pueda existir más de 1 cuenta `super_admin`**.
-> - **Auditoría y prevención de *Function Creep*:** Aunque `super_admin` puede operar todos los módulos y propósitos válidos (`administracion_total`, `atencion_medica`, `investigacion_estadistica`, `ejercicio_arco`, `mantenimiento_ttl`, `acceso_titular`), **sigue auditándose en el SIEM** y sigue siendo bloqueado por OPA si se envía un `X-Purpose` vacío o indebido (ej. `marketing_comercial`).
+> **Nota Zero Trust sobre `super_admin` (Separación de Funciones IAM):**
+> - **Cuenta única (singleton):** El rol `super_admin` está **bloqueado en el registro público** (`POST /auth/register` solo permite crear cuentas `paciente`; intentar cualquier otro rol devuelve `403 Forbidden` y emite la alerta `AUTH_PRIVILEGE_ESCALATION_BLOCKED` en el SIEM) y está restringido en PostgreSQL mediante el índice único parcial `uq_single_super_admin` para que **nunca pueda existir más de 1 cuenta `super_admin`**.
+> - **Sin privilegios clínicos ni criptográficos (*Separation of Duties*):** Bajo *Least Privilege*, `super_admin` **únicamente** administra identidades y roles en la pestaña *Gestión de Cuentas* (`/auth/users*`). Tanto OPA como los routers de API y Vault le devuelven `403 Forbidden` si intenta leer/crear expedientes, detokenizar PII, rotar llaves Transit, exportar cohortes o ejecutar borrado ARCO. Cada dominio operativo pertenece exclusivamente a su rol ABAC dedicado (`medico`, `enfermeria`, `analista`, `auditor_arco`, `admin_sec`, `paciente`).
 
 ---
 

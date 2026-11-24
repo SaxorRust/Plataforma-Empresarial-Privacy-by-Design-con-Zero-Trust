@@ -133,8 +133,8 @@ valid_role_purpose if {
 }
 
 # Nota de separación de funciones (Zero Trust):
-# `super_admin` es estrictamente gestor de cuentas e identidades (IAM en /auth/users)
-# y carece deliberadamente de permisos sobre expedientes clínicos, PII, exportaciones o ARCO.
+# `admin_sec` gestiona SecOps (Vault/OPA/TTL) e identidades IAM (/auth/users),
+# pero carece deliberadamente de permisos sobre expedientes clínicos, PII, exportaciones o ARCO.
 
 # ------------------------------------------------------------------------------
 # Minimización cuantitativa (MA-04): proyección estricta de columnas permitidas
@@ -222,8 +222,6 @@ reason := "Autorizado conforme a propósito declarado y política de minimizaci�
 	not input.purpose
 } else := "Acceso denegado: propósito declarado ausente (X-Purpose obligatorio — prevención de function creep)" if {
 	input.purpose == ""
-} else := "Acceso denegado: separación de funciones Zero Trust (super_admin solo gestiona cuentas IAM, sin acceso a datos clínicos ni ciclo de vida)" if {
-	input.role == "super_admin"
 } else := "Acceso denegado: registro sanitizado conforme a NIST SP 800-88 (solo visible para auditoría ARCO)" if {
 	resource_is_sanitized
 	input.role != "auditor_arco"

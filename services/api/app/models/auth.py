@@ -12,7 +12,6 @@ UserRole = Literal[
     "auditor_arco",
     "admin_sec",
     "paciente",
-    "super_admin",
 ]
 
 
@@ -106,7 +105,7 @@ class AdminUserCreateRequest(BaseModel):
     )
     role: UserRole = Field(
         ...,
-        description="Rol institucional asignado exclusivamente por super_admin (IAM).",
+        description="Rol institucional asignado exclusivamente por admin_sec (SecOps / IAM).",
     )
 
     @field_validator("password")

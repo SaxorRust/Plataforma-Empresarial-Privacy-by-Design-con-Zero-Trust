@@ -89,8 +89,8 @@ def register_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
                 "Acceso denegado (Zero Trust): el registro público solo permite el rol 'paciente'. "
-                "El rol 'super_admin' es único y los roles institucionales deben ser aprovisionados "
-                "por un administrador en POST /auth/users."
+                "Los roles institucionales deben ser aprovisionados "
+                "por 'admin_sec' en POST /auth/users."
             ),
         )
 
@@ -525,37 +525,13 @@ def delete_webauthn_credential(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def _assert_super_admin_guard(
-    *,
-    actor: AuthenticatedUser,
-    target_role: str | None,
-    existing_role: str | None = None,
-) -> None:
-    if target_role == "super_admin" and existing_role != "super_admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Acceso denegado (Zero Trust): el rol 'super_admin' es único en la plataforma "
-                "y no puede asignarse a cuentas adicionales."
-            ),
-        )
-    if actor.role != "super_admin" and existing_role == "super_admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Acceso denegado (Zero Trust): solo 'super_admin' puede "
-                "administrar la cuenta 'super_admin'."
-            ),
-        )
-
-
 @router.get(
     "/users",
     response_model=list[UserPublicResponse],
-    summary="Listar cuentas institucionales registradas (exclusivo super_admin IAM)",
+    summary="Listar cuentas institucionales registradas (exclusivo admin_sec SecOps/IAM)",
 )
 def admin_list_users(
-    _actor: AuthenticatedUser = Depends(require_roles("super_admin")),
+    _actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
     repo: UserRepository = Depends(get_user_repository),
 ) -> list[UserPublicResponse]:
     try:
@@ -571,17 +547,16 @@ def admin_list_users(
     "/users",
     response_model=UserPublicResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Aprovisionar cuenta institucional con rol ABAC (exclusivo super_admin IAM)",
+    summary="Aprovisionar cuenta institucional con rol ABAC (exclusivo admin_sec SecOps/IAM)",
 )
 def admin_create_user(
     payload: AdminUserCreateRequest,
     request: Request,
-    actor: AuthenticatedUser = Depends(require_roles("super_admin")),
+    actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
     repo: UserRepository = Depends(get_user_repository),
     password_service: Argon2idPasswordService = Depends(get_password_service),
     audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> UserPublicResponse:
-    _assert_super_admin_guard(actor=actor, target_role=payload.role)
     password_hash = password_service.hash_password(payload.password)
     try:
         user = repo.create_user(
@@ -613,13 +588,13 @@ def admin_create_user(
 @router.patch(
     "/users/{user_id}",
     response_model=UserPublicResponse,
-    summary="Actualizar rol o estado activo de una cuenta y revocar sus sesiones (exclusivo super_admin)",
+    summary="Actualizar rol o estado activo de una cuenta y revocar sus sesiones (exclusivo admin_sec)",
 )
 def admin_update_user(
     user_id: UUID,
     payload: AdminUserUpdateRequest,
     request: Request,
-    actor: AuthenticatedUser = Depends(require_roles("super_admin")),
+    actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
     repo: UserRepository = Depends(get_user_repository),
     jwt_service: JWTService = Depends(get_jwt_service),
     audit_client: SyslogAuditClient = Depends(get_audit_client),
@@ -643,11 +618,6 @@ def admin_update_user(
             detail="Cuenta de usuario no encontrada.",
         )
 
-    _assert_super_admin_guard(
-        actor=actor,
-        target_role=payload.role,
-        existing_role=existing.role,
-    )
     if existing.id == actor.user_id and (
         payload.is_active is False or (payload.role is not None and payload.role != actor.role)
     ):
@@ -693,12 +663,12 @@ def admin_update_user(
 @router.post(
     "/users/{user_id}/revoke-sessions",
     response_model=AdminRevokeSessionsResponse,
-    summary="Revocar inmediatamente todas las sesiones JWT activas de un usuario (exclusivo super_admin)",
+    summary="Revocar inmediatamente todas las sesiones JWT activas de un usuario (exclusivo admin_sec)",
 )
 def admin_revoke_user_sessions(
     user_id: UUID,
     request: Request,
-    actor: AuthenticatedUser = Depends(require_roles("super_admin")),
+    actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
     repo: UserRepository = Depends(get_user_repository),
     jwt_service: JWTService = Depends(get_jwt_service),
     audit_client: SyslogAuditClient = Depends(get_audit_client),
@@ -716,7 +686,6 @@ def admin_revoke_user_sessions(
             detail="Cuenta de usuario no encontrada.",
         )
 
-    _assert_super_admin_guard(actor=actor, target_role=None, existing_role=target.role)
     revoked_count = jwt_service.revoke_user_sessions(target.id)
     audit_client.emit_event(
         msg_id="AUTH_USER_SESSIONS_REVOKED",

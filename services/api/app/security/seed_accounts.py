@@ -16,7 +16,6 @@ class AccountSeedSpec:
 
 
 DEFAULT_TEAM_ACCOUNTS: tuple[AccountSeedSpec, ...] = (
-    AccountSeedSpec(username="super_admin", role="super_admin", label="SuperAdmin"),
     AccountSeedSpec(username="medico_demo", role="medico", label="Medico"),
     AccountSeedSpec(username="enfermeria_demo", role="enfermeria", label="Enfermeria"),
     AccountSeedSpec(username="analista_demo", role="analista", label="Analista"),
@@ -33,7 +32,7 @@ def seed_default_team_accounts(
     suffix: str,
 ) -> list[str]:
     """
-    Crea de forma idempotente las 7 cuentas genéricas del equipo (super_admin + 6 roles ABAC)
+    Crea de forma idempotente las 6 cuentas genéricas del equipo (roles ABAC Zero Trust)
     si aún no existen en `auth_identity.users`.
     """
     ensure_fn = getattr(repo, "ensure_role_constraint", None)

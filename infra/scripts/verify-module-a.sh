@@ -24,8 +24,8 @@ for cmd in curl jq; do
   fi
 done
 
-PROVISION_USER="${PROVISION_USER:-super_admin}"
-PROVISION_PASS="${PROVISION_PASS:-SuperAdmin#2026!ZT}"
+PROVISION_USER="${PROVISION_USER:-admin_sec}"
+PROVISION_PASS="${PROVISION_PASS:-AdminSec#2026!ZT}"
 PROVISION_TOKEN="$(curl -s -X POST "${BASE_URL}/auth/login" \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"${PROVISION_USER}\",\"password\":\"${PROVISION_PASS}\"}" | jq -r '.access_token // empty')"

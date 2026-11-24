@@ -35,7 +35,18 @@ def test_owasp_a01_broken_access_control():
     ):
         assert client.get(path).status_code == 401, f"Se esperaba 401 sin token en {path}"
 
-    # 2. Escalación de privilegios en auto-registro público -> 403
+    # 2. Escalación de privilegios en auto-registro público -> 403 (y rol eliminado super_admin -> 422)
+    assert (
+        client.post(
+            "/auth/register",
+            json={
+                "username": "atacante_admin",
+                "password": "Hospital!2026#ZeroTrust",
+                "role": "admin_sec",
+            },
+        ).status_code
+        == 403
+    )
     assert (
         client.post(
             "/auth/register",
@@ -45,7 +56,7 @@ def test_owasp_a01_broken_access_control():
                 "role": "super_admin",
             },
         ).status_code
-        == 403
+        == 422
     )
 
     # 3. Function Creep y separación de funciones -> 403
@@ -64,19 +75,6 @@ def test_owasp_a01_broken_access_control():
         client.get(
             "/vault/patients/pat_" + "a" * 32,
             headers=headers_for("admin_sec", "mantenimiento_ttl"),
-        ).status_code
-        == 403
-    )
-    assert (
-        client.get(
-            "/clinical/records", headers=headers_for("super_admin", "atencion_medica")
-        ).status_code
-        == 403
-    )
-    assert (
-        client.get(
-            "/vault/patients/pat_" + "a" * 32,
-            headers=headers_for("super_admin", "gestion_identidades"),
         ).status_code
         == 403
     )

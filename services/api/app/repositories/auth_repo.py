@@ -106,10 +106,17 @@ class PostgresUserRepository:
         )
 
     def ensure_role_constraint(self) -> None:
-        """Garantiza que el constraint CHECK de roles incluya `super_admin` en BD ya inicializadas."""
+        """Elimina cuentas `super_admin` heredadas y garantiza el constraint CHECK de los 6 roles ABAC."""
         try:
             with self._connect() as conn:
                 with conn.cursor() as cur:
+                    cur.execute("DROP INDEX IF EXISTS auth_identity.uq_single_super_admin")
+                    cur.execute(
+                        """
+                        DELETE FROM auth_identity.users
+                        WHERE role = 'super_admin' OR username = 'super_admin'
+                        """
+                    )
                     cur.execute(
                         "ALTER TABLE auth_identity.users DROP CONSTRAINT IF EXISTS users_role_check"
                     )
@@ -119,21 +126,8 @@ class PostgresUserRepository:
                         ADD CONSTRAINT users_role_check
                         CHECK (role IN (
                             'medico', 'enfermeria', 'analista', 'auditor_arco',
-                            'admin_sec', 'paciente', 'super_admin'
+                            'admin_sec', 'paciente'
                         ))
-                        """
-                    )
-                    cur.execute(
-                        """
-                        DELETE FROM auth_identity.users
-                        WHERE role = 'super_admin' AND username <> 'super_admin'
-                        """
-                    )
-                    cur.execute(
-                        """
-                        CREATE UNIQUE INDEX IF NOT EXISTS uq_single_super_admin
-                        ON auth_identity.users (role)
-                        WHERE role = 'super_admin'
                         """
                     )
                 conn.commit()

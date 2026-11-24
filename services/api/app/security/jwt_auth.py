@@ -15,7 +15,6 @@ VALID_ROLES: set[str] = {
     "auditor_arco",
     "admin_sec",
     "paciente",
-    "super_admin",
 }
 
 

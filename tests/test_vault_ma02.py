@@ -186,8 +186,8 @@ def test_vault_tokenize_detokenize_encryption_isolation_and_purge():
     # Sin JWT -> 401
     assert client.post("/vault/patients/tokenize", json=SAMPLE_PII).status_code == 401
 
-    # Roles sin autoridad clínica (incluyendo admin_sec y super_admin IAM) bloqueados -> 403
-    for blocked_tok_role in ("analista", "admin_sec", "auditor_arco", "paciente", "super_admin"):
+    # Roles sin autoridad clínica (incluyendo admin_sec) bloqueados -> 403
+    for blocked_tok_role in ("analista", "admin_sec", "auditor_arco", "paciente"):
         assert (
             client.post(
                 "/vault/patients/tokenize",
@@ -222,14 +222,13 @@ def test_vault_tokenize_detokenize_encryption_isolation_and_purge():
     assert SAMPLE_PII["nss"] not in serialized_kv
     assert SAMPLE_PII["full_name"] not in serialized_kv
 
-    # Roles sin autoridad clínica (incluyendo admin_sec y super_admin IAM) bloqueados -> 403
+    # Roles sin autoridad clínica (incluyendo admin_sec) bloqueados -> 403
     for blocked_role in (
         "enfermeria",
         "analista",
         "paciente",
         "auditor_arco",
         "admin_sec",
-        "super_admin",
     ):
         resp = client.get(
             f"/vault/patients/{opaque_token}",

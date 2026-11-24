@@ -43,7 +43,8 @@ def test_api_portal_ui_and_static_assets():
     assert 'id="btn-copy-reg-password"' in portal_resp.text
     assert 'id="session-idle-timer"' in portal_resp.text
     assert 'id="tab-users"' in portal_resp.text
-    assert 'id="nav-tab-users" data-tab="tab-users" data-roles="super_admin"' in portal_resp.text
+    assert 'id="nav-tab-users" data-tab="tab-users" data-roles="admin_sec"' in portal_resp.text
+    assert "super_admin" not in portal_resp.text
     assert 'id="reg-role"' not in portal_resp.text
     assert "script-src 'self'" in portal_resp.headers["content-security-policy"]
     assert "style-src 'self'" in portal_resp.headers["content-security-policy"]

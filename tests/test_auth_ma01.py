@@ -342,7 +342,7 @@ def test_register_login_jwt_me_and_logout_revocation():
     assert weak_resp.status_code == 422
 
     # Escalación de privilegios bloqueada en registro público -> 403
-    for privileged_role in ("super_admin", "admin_sec", "medico", "auditor_arco"):
+    for privileged_role in ("admin_sec", "medico", "auditor_arco", "enfermeria", "analista"):
         esc_resp = client.post(
             "/auth/register",
             json={
@@ -536,7 +536,7 @@ def test_webauthn_passkey_full_flow_anti_phishing_replay_and_cloning():
     assert me_after["webauthn_enabled"] is False
 
 
-def test_super_admin_public_registration_is_blocked():
+def test_removed_super_admin_role_is_rejected():
     client, repo, _pwd, _jwt = _build_auth_test_client()
 
     reg = client.post(
@@ -547,8 +547,7 @@ def test_super_admin_public_registration_is_blocked():
             "role": "super_admin",
         },
     )
-    assert reg.status_code == 403
-    assert "super_admin" in reg.json()["detail"]
+    assert reg.status_code == 422
     assert repo.get_user_by_username("atacante_super") is None
 
 
@@ -558,10 +557,6 @@ def test_admin_user_management_and_session_inactivity_timeout():
 
     seed_default_team_accounts(repo, pwd_service, suffix="#2026!ZT")
 
-    super_token = client.post(
-        "/auth/login",
-        json={"username": "super_admin", "password": "SuperAdmin#2026!ZT"},
-    ).json()["access_token"]
     admin_token = client.post(
         "/auth/login",
         json={"username": "admin_sec", "password": "AdminSec#2026!ZT"},
@@ -570,36 +565,41 @@ def test_admin_user_management_and_session_inactivity_timeout():
         "/auth/login",
         json={"username": "medico_demo", "password": "Medico#2026!ZT"},
     ).json()["access_token"]
+    auditor_token = client.post(
+        "/auth/login",
+        json={"username": "auditor_arco", "password": "AuditorArco#2026!ZT"},
+    ).json()["access_token"]
 
-    super_headers = {"Authorization": f"Bearer {super_token}"}
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     medico_headers = {"Authorization": f"Bearer {medico_token}"}
+    auditor_headers = {"Authorization": f"Bearer {auditor_token}"}
 
-    # Médico y admin_sec NO pueden listar ni crear usuarios (IAM exclusivo super_admin) -> 403
+    # Médico y auditor_arco NO pueden listar ni crear usuarios (IAM exclusivo admin_sec) -> 403
     assert client.get("/auth/users", headers=medico_headers).status_code == 403
-    assert client.get("/auth/users", headers=admin_headers).status_code == 403
+    assert client.get("/auth/users", headers=auditor_headers).status_code == 403
 
-    # super_admin lista cuentas y aprovisiona roles, pero NO puede crear un segundo super_admin -> 403
-    users_list = client.get("/auth/users", headers=super_headers)
+    # admin_sec lista las 6 cuentas y aprovisiona roles institucionales
+    users_list = client.get("/auth/users", headers=admin_headers)
     assert users_list.status_code == 200
-    assert len(users_list.json()) == 7
+    assert len(users_list.json()) == 6
 
+    # Rol eliminado super_admin rechazado con 422 incluso por admin_sec
     assert (
         client.post(
             "/auth/users",
-            headers=super_headers,
+            headers=admin_headers,
             json={
                 "username": "fake_super",
                 "password": "SuperFake#2026!ZT",
                 "role": "super_admin",
             },
         ).status_code
-        == 403
+        == 422
     )
 
     created = client.post(
         "/auth/users",
-        headers=super_headers,
+        headers=admin_headers,
         json={
             "username": "dra_nueva",
             "password": "DoctoraNueva#2026!ZT",
@@ -621,7 +621,7 @@ def test_admin_user_management_and_session_inactivity_timeout():
     # Cambiar rol revoca sesión previa inmediatamente (Zero Trust)
     patch_role = client.patch(
         f"/auth/users/{new_user_id}",
-        headers=super_headers,
+        headers=admin_headers,
         json={"role": "enfermeria"},
     )
     assert patch_role.status_code == 200
@@ -631,7 +631,7 @@ def test_admin_user_management_and_session_inactivity_timeout():
     # Suspender cuenta impide login posterior
     patch_suspend = client.patch(
         f"/auth/users/{new_user_id}",
-        headers=super_headers,
+        headers=admin_headers,
         json={"is_active": False},
     )
     assert patch_suspend.status_code == 200
@@ -645,28 +645,28 @@ def test_admin_user_management_and_session_inactivity_timeout():
     )
 
     # Timeout de inactividad (2 minutos = 120s): simular última actividad hace 125s -> 401
-    me_super = client.get("/auth/me", headers=super_headers)
-    assert me_super.status_code == 200
-    jti = me_super.json()["jti"]
+    me_admin = client.get("/auth/me", headers=admin_headers)
+    assert me_admin.status_code == 200
+    jti = me_admin.json()["jti"]
     jwt_service._last_activity[jti] -= 125
-    expired_me = client.get("/auth/me", headers=super_headers)
+    expired_me = client.get("/auth/me", headers=admin_headers)
     assert expired_me.status_code == 401
     assert "inactividad" in expired_me.json()["detail"].lower()
 
 
-def test_seed_default_team_accounts_idempotent_and_all_7_logins():
+def test_seed_default_team_accounts_idempotent_and_all_6_logins():
     client, repo, pwd_service, _jwt = _build_auth_test_client()
     from app.security.seed_accounts import seed_default_team_accounts
 
     created_first = seed_default_team_accounts(repo, pwd_service, suffix="#2026!ZT")
-    assert len(created_first) == 7
+    assert len(created_first) == 6
+    assert "super_admin" not in created_first
 
     # Segunda ejecución debe ser idempotente (0 nuevas cuentas)
     created_second = seed_default_team_accounts(repo, pwd_service, suffix="#2026!ZT")
     assert created_second == []
 
     expected_accounts = [
-        ("super_admin", "SuperAdmin#2026!ZT", "super_admin"),
         ("medico_demo", "Medico#2026!ZT", "medico"),
         ("enfermeria_demo", "Enfermeria#2026!ZT", "enfermeria"),
         ("analista_demo", "Analista#2026!ZT", "analista"),

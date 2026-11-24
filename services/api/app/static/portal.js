@@ -18,7 +18,6 @@
     auditor_arco: "ejercicio_arco",
     admin_sec: "mantenimiento_ttl",
     paciente: "acceso_titular",
-    super_admin: "gestion_identidades",
   };
 
   const ROLE_DESCRIPTIONS = {
@@ -26,9 +25,8 @@
     enfermeria: "Asistencia clínica minimizada: lectura restringida de departamento y resumen clínico con token opaco enmascarado (pat_xxxx...yyyy).",
     analista: "Analítica poblacional: lecturas generalizadas (rango de edad, CP 2 dígitos) sin acceso individual y exportación HIPAA Safe Harbor + (k, l).",
     auditor_arco: "Cumplimiento y auditoría: evaluación OPA, barrido TTL, borrado certificado ARCO/NIST SP 800-88 y descarga/verificación SHA-256 de certificados.",
-    admin_sec: "Operaciones de seguridad (SecOps): estado y rotación de llave Transit en Vault, evaluación OPA y barrido TTL. Separación de funciones: sin datos clínicos ni PII.",
+    admin_sec: "SecOps e IAM: gestión de cuentas/roles (/auth/users), estado y rotación de llave Transit en Vault, evaluación OPA y barrido TTL. Separación de funciones Zero Trust: sin acceso a datos clínicos, PII ni ARCO.",
     paciente: "Acceso de titular: consulta exclusiva de sus propios registros bajo propósito acceso_titular.",
-    super_admin: "Gestor de Cuentas y Roles (IAM): alta de personal institucional, asignación/cambio de roles ABAC, suspensión y revocación de sesiones JWT. Separación de funciones Zero Trust: sin acceso a datos clínicos, PII ni ARCO.",
   };
 
   const DEMO_COHORT = [
@@ -516,16 +514,12 @@
 
     byId("auth-gate").classList.add("is-hidden");
     byId("app-shell").classList.remove("is-hidden");
-    if (state.user.role === "super_admin") {
-      switchTab("tab-users");
-    } else {
-      switchTab("tab-auth");
-    }
+    switchTab("tab-auth");
 
     byId("auth-me-output").textContent = JSON.stringify(meRes.data, null, 2);
     await refreshTelemetry();
     await refreshWebAuthnCredentials();
-    if (state.user.role === "super_admin") {
+    if (state.user.role === "admin_sec") {
       await loadAdminUsers();
     }
     showToast(
@@ -1380,7 +1374,6 @@
       return;
     }
 
-    const actorIsSuper = state.user && state.user.role === "super_admin";
     const actorUsername = state.user ? state.user.username : "";
 
     users.forEach(function (u) {
@@ -1392,15 +1385,13 @@
       tr.appendChild(tdUser);
 
       const tdRole = document.createElement("td");
-      const canModifyTarget = actorIsSuper || u.role !== "super_admin";
       const isSelf = u.username === actorUsername;
 
-      if (canModifyTarget && !isSelf) {
+      if (!isSelf) {
         const sel = document.createElement("select");
         sel.className = "admin-role-select";
         sel.setAttribute("aria-label", "Rol para " + u.username);
         ALL_ROLES.forEach(function (roleOpt) {
-          if (roleOpt === "super_admin") return;
           const opt = document.createElement("option");
           opt.value = roleOpt;
           opt.textContent = roleOpt;
@@ -1443,7 +1434,7 @@
       const btnWrap = document.createElement("div");
       btnWrap.className = "btn-row btn-row-flush";
 
-      if (canModifyTarget && !isSelf) {
+      if (!isSelf) {
         const btnToggle = document.createElement("button");
         btnToggle.type = "button";
         btnToggle.className = "btn " + (u.is_active ? "btn-danger" : "btn-primary") + " btn-sm";

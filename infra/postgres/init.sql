@@ -13,17 +13,12 @@ CREATE SCHEMA IF NOT EXISTS compliance;
 CREATE TABLE IF NOT EXISTS auth_identity.users (
     id UUID PRIMARY KEY,
     username VARCHAR(64) UNIQUE NOT NULL,
-    role VARCHAR(32) NOT NULL CHECK (role IN ('medico', 'enfermeria', 'analista', 'auditor_arco', 'admin_sec', 'paciente', 'super_admin')),
+    role VARCHAR(32) NOT NULL CHECK (role IN ('medico', 'enfermeria', 'analista', 'auditor_arco', 'admin_sec', 'paciente')),
     password_hash TEXT NOT NULL, -- Argon2id (salt único + pepper de aplicación)
     webauthn_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
--- Garantiza a nivel de base de datos que solo pueda existir una única cuenta super_admin
-CREATE UNIQUE INDEX IF NOT EXISTS uq_single_super_admin
-    ON auth_identity.users (role)
-    WHERE role = 'super_admin';
 
 -- Credenciales FIDO2 / WebAuthn (Passkeys)
 CREATE TABLE IF NOT EXISTS auth_identity.webauthn_credentials (

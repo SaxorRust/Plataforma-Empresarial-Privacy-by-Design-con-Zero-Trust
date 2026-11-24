@@ -88,7 +88,7 @@
         <div class="field-group">
           <label>Rol Asignado (Mínimo Privilegio — Zero Trust)</label>
           <div class="role-fixed-note" id="reg-role-notice">
-            <strong>paciente</strong> (Acceso Titular). Los roles institucionales y <code>super_admin</code> solo pueden ser gestionados por un administrador en <em>Gestión de Cuentas</em>.
+            <strong>paciente</strong> (Acceso Titular). Los roles institucionales solo pueden ser aprovisionados por <code>admin_sec</code> en <em>Gestión de Cuentas</em>.
           </div>
         </div>
         <div class="field-group">
@@ -181,7 +181,6 @@
             <option value="ejercicio_arco">ejercicio_arco (Derechos ARCO)</option>
             <option value="mantenimiento_ttl">mantenimiento_ttl (SecOps TTL)</option>
             <option value="acceso_titular">acceso_titular (Paciente)</option>
-            <option value="gestion_identidades">gestion_identidades (IAM / Cuentas)</option>
             <option value="marketing_comercial">marketing_comercial (Prueba 403 Function Creep)</option>
             <option value="">(Sin propósito - Prueba 403 Default Deny)</option>
           </select>
@@ -210,7 +209,7 @@
         <div>
           <div class="nav-group-title">Módulos Autorizados</div>
           <nav class="nav-list">
-            <button type="button" class="nav-btn active" id="nav-tab-auth" data-tab="tab-auth" data-roles="medico,enfermeria,analista,auditor_arco,admin_sec,paciente,super_admin">
+            <button type="button" class="nav-btn active" id="nav-tab-auth" data-tab="tab-auth" data-roles="medico,enfermeria,analista,auditor_arco,admin_sec,paciente">
               <span>1. Mi Sesión &amp; Passkeys</span>
               <span class="nav-code">MA-01</span>
             </button>
@@ -230,7 +229,7 @@
               <span>5. ARCO, TTL &amp; NIST 800-88</span>
               <span class="nav-code">MB-01/04</span>
             </button>
-            <button type="button" class="nav-btn" id="nav-tab-users" data-tab="tab-users" data-roles="super_admin">
+            <button type="button" class="nav-btn" id="nav-tab-users" data-tab="tab-users" data-roles="admin_sec">
               <span>6. Gestión de Cuentas</span>
               <span class="nav-code">IAM</span>
             </button>
@@ -531,7 +530,6 @@
                       <option value="auditor_arco">auditor_arco</option>
                       <option value="admin_sec">admin_sec</option>
                       <option value="paciente">paciente</option>
-                      <option value="super_admin">super_admin</option>
                     </select>
                   </div>
                   <div class="field-group">
@@ -542,7 +540,6 @@
                       <option value="ejercicio_arco">ejercicio_arco</option>
                       <option value="mantenimiento_ttl">mantenimiento_ttl</option>
                       <option value="acceso_titular">acceso_titular</option>
-                      <option value="gestion_identidades">gestion_identidades (IAM — bloqueado en clínica)</option>
                       <option value="publicidad">publicidad (No autorizado)</option>
                       <option value="">(Vacío / Ausente)</option>
                     </select>
@@ -777,13 +774,13 @@
         </section>
 
         <!-- ==================================================================
-             TAB 6: Gestión de Cuentas Institucionales (Exclusivo super_admin IAM)
+             TAB 6: Gestión de Cuentas Institucionales (Exclusivo admin_sec IAM)
              ================================================================== -->
         <section class="tab-panel" id="tab-users" aria-label="Gestión de Cuentas Institucionales">
           <div class="section-header">
             <div>
-              <h2>Gestión de Cuentas y Roles (IAM Zero Trust — super_admin)</h2>
-              <p>Administración exclusiva de cuentas existentes, alta de personal institucional, asignación de roles ABAC y revocación inmediata de sesiones JWT.</p>
+              <h2>Gestión de Cuentas y Roles (IAM Zero Trust — admin_sec)</h2>
+              <p>Administración de cuentas existentes, alta de personal institucional, asignación de roles ABAC y revocación inmediata de sesiones JWT.</p>
             </div>
             <div class="btn-row">
               <button type="button" class="btn btn-primary btn-sm" id="btn-refresh-users">
@@ -798,7 +795,7 @@
                 <h3>Aprovisionar Nueva Cuenta Institucional</h3>
                 <span class="badge badge-ok">POST /auth/users</span>
               </div>
-              <p class="panel-desc">Crea nuevas cuentas con su rol institucional correspondiente. La cuenta <code>super_admin</code> es única en base de datos y toda operación se audita en Syslog RFC 5424.</p>
+              <p class="panel-desc">Crea nuevas cuentas con su rol institucional correspondiente. Toda operación de aprovisionamiento, cambio de rol o suspensión se audita en Syslog RFC 5424.</p>
               <form id="form-admin-create-user">
                 <div class="field-group">
                   <label for="admin-new-username">Nombre de usuario</label>
@@ -811,7 +808,7 @@
                     <option value="enfermeria">enfermeria (Asistencia / Token Enmascarado)</option>
                     <option value="analista">analista (Estadística Safe Harbor / k,l)</option>
                     <option value="auditor_arco">auditor_arco (Derechos ARCO / NIST 800-88)</option>
-                    <option value="admin_sec">admin_sec (SecOps / Vault / OPA / TTL)</option>
+                    <option value="admin_sec">admin_sec (SecOps / IAM / Vault / OPA / TTL)</option>
                     <option value="paciente">paciente (Acceso Titular)</option>
                   </select>
                 </div>
@@ -861,7 +858,7 @@
               </div>
               <p class="panel-desc">Controles activos aplicados por el servidor y OPA:</p>
               <ul class="iam-policy-list">
-                <li><strong>IAM sin acceso clínico:</strong> <code>super_admin</code> gestiona exclusivamente cuentas y roles en <code>/auth/users</code>; OPA y Vault bloquean (<code>403</code>) cualquier lectura clínica, detokenización PII o borrado ARCO.</li>
+                <li><strong>SecOps/IAM sin acceso clínico:</strong> <code>admin_sec</code> gestiona cuentas/roles en <code>/auth/users</code>, estado/rotación en Vault, auditoría OPA y TTL; OPA y Vault bloquean (<code>403</code>) cualquier lectura clínica, detokenización PII o borrado ARCO.</li>
                 <li><strong>Auto-registro restringido:</strong> <code>POST /auth/register</code> solo crea cuentas <code>paciente</code>; intentar elegir roles privilegiados retorna <code>403</code> y genera alerta SIEM.</li>
                 <li><strong>Revocación inmediata:</strong> Cambiar el rol o suspender una cuenta revoca en el acto todos sus tokens JWT activos.</li>
                 <li><strong>Timeout de inactividad:</strong> Toda sesión expira automáticamente tras <strong>2 minutos</strong> sin actividad en cliente y servidor.</li>

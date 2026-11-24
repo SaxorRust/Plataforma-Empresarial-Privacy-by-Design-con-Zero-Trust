@@ -170,9 +170,9 @@ test_medico_cannot_erase_or_export_anonymized if {
 	d_exp.allow == false
 }
 
-test_super_admin_denied_clinical_and_lifecycle_separation_of_duties if {
+test_admin_sec_denied_clinical_pii_export_and_arco if {
 	d_read := decision with input as {
-		"role": "super_admin",
+		"role": "admin_sec",
 		"purpose": "atencion_medica",
 		"action": "read_record",
 		"resource_purpose": "atencion_medica",
@@ -181,41 +181,35 @@ test_super_admin_denied_clinical_and_lifecycle_separation_of_duties if {
 	d_read.allowed_fields == []
 
 	d_detok := decision with input as {
-		"role": "super_admin",
+		"role": "admin_sec",
 		"purpose": "atencion_medica",
 		"action": "detokenize_pii",
 	}
 	d_detok.allow == false
 
 	d_erase := decision with input as {
-		"role": "super_admin",
+		"role": "admin_sec",
 		"purpose": "ejercicio_arco",
 		"action": "erase_nist_800_88",
 	}
 	d_erase.allow == false
 
 	d_exp := decision with input as {
-		"role": "super_admin",
+		"role": "admin_sec",
 		"purpose": "investigacion_estadistica",
 		"action": "export_anonymized",
 	}
 	d_exp.allow == false
 }
 
-test_super_admin_denied_with_iam_purpose_on_clinical if {
-	d_iam := decision with input as {
+test_unknown_or_removed_role_default_deny if {
+	d_unknown := decision with input as {
 		"role": "super_admin",
-		"purpose": "gestion_identidades",
+		"purpose": "atencion_medica",
 		"action": "read_record",
 	}
-	d_iam.allow == false
-
-	d_empty := decision with input as {
-		"role": "super_admin",
-		"purpose": "",
-		"action": "read_record",
-	}
-	d_empty.allow == false
+	d_unknown.allow == false
+	d_unknown.allowed_fields == []
 }
 
 

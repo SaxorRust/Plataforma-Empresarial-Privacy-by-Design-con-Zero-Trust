@@ -105,6 +105,7 @@ services:
     container_name: zt-siem-collector
     restart: unless-stopped
     environment:
+      TZ: America/Mexico_City
       SIEM_SYSLOG_HOST: 0.0.0.0
       SIEM_SYSLOG_PORT: ${SIEM_SYSLOG_PORT:-5514}
       SIEM_UI_PORT: 8080
@@ -151,6 +152,7 @@ services:
     env_file:
       - .env
     environment:
+      TZ: America/Mexico_City
       DATABASE_URL: postgresql://${POSTGRES_USER:-zt_app_user}:${POSTGRES_PASSWORD:-dev_postgres_change_me}@postgres:5432/${POSTGRES_DB:-hospital_zt}
       VAULT_ADDR: http://vault:8200
       OPA_URL: http://opa:8181/v1/data/hospital/authz/decision

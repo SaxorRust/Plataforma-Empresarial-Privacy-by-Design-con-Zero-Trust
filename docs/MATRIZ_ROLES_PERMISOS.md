@@ -173,8 +173,8 @@
 
 ## 5. Controles Transversales Aplicados a Todos los Roles
 
-- **Timeout por inactividad (2 minutos):** Si transcurren 120 segundos sin actividad, el servidor rechaza el JWT (`401`) y el portal bloquea la interfaz automáticamente regresando a la pantalla de inicio de sesión.
-- **Anti-escalación y trazabilidad SIEM (MC-01 a MC-04):** Todo acceso denegado (`403`), intento de *function creep* (propósito vacío o inválido), acceso masivo a expedientes o intento de fuerza bruta genera un evento estructurado **Syslog RFC 5424** en el colector SIEM (`zt-siem`).
+- **Timeout implícito por inactividad (backend):** Si transcurren 120 segundos sin actividad, el servidor revoca y rechaza el JWT (`401`) de forma totalmente implícita (sin contador visible ni manipulable en la interfaz) y el portal bloquea automáticamente la sesión al siguiente intento de operación.
+- **Anti-escalación y trazabilidad SIEM (MC-01 a MC-04):** Todo acceso denegado (`403`), intento de *function creep* (propósito vacío o inválido), acceso masivo a expedientes o intento de fuerza bruta genera un evento estructurado **Syslog RFC 5424** (persistido en UTC y visualizado por defecto en **`America/Mexico_City`** con selector de huso horario en la consola SOC).
 - **Acceso restringido a la Consola SIEM (`siem.tralaleritosmigajeros.uk`):** La consola SOC externa no utiliza las credenciales JWT del portal clínico; exige autenticación independiente mediante **Cloudflare Zero Trust Access (Email One-Time PIN)** restringida exclusivamente a **cuentas institucionales BUAP** (`@alumno.buap.mx` / `@correo.buap.mx`) autorizadas en la política *Solo Equipo SOC BUAP* (ver [hardening-cloudflare.md](hardening-cloudflare.md)).
 - **OpenAPI / Swagger oculto por defecto:** `/docs`, `/redoc` y `/openapi.json` retornan `404` mientras `EXPOSE_OPENAPI_DOCS=false` (OWASP API9:2023).
 - **Content Security Policy estricta:** El portal sirve `script-src 'self'; style-src 'self'` sin `unsafe-inline`.

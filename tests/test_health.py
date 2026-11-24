@@ -41,7 +41,7 @@ def test_api_portal_ui_and_static_assets():
     assert 'id="toggle-reg-password"' in portal_resp.text
     assert 'id="btn-generate-password"' in portal_resp.text
     assert 'id="btn-copy-reg-password"' in portal_resp.text
-    assert 'id="session-idle-timer"' in portal_resp.text
+    assert 'id="session-idle-timer"' not in portal_resp.text
     assert 'id="tab-users"' in portal_resp.text
     assert 'id="nav-tab-users" data-tab="tab-users" data-roles="admin_sec"' in portal_resp.text
     assert "super_admin" not in portal_resp.text
@@ -81,5 +81,16 @@ def test_api_portal_ui_and_static_assets():
     assert "setPasswordVisibility" in js_resp.text
     assert "generateSecurePassword" in js_resp.text
     assert "handlePurposeChange" in js_resp.text
+    assert "inactivityTimeoutSeconds" not in js_resp.text
     assert "DEMO_PASSWORD" not in js_resp.text
+
+
+def test_siem_dashboard_timezone_selector_defaults_to_mexico_city():
+    siem_client = load_service_client("siem")
+    resp = siem_client.get("/")
+    assert resp.status_code == 200
+    assert 'id="timezone-select"' in resp.text
+    assert 'value="America/Mexico_City" selected' in resp.text
+    assert 'const DEFAULT_TIMEZONE = "America/Mexico_City"' in resp.text
+    assert 'value="UTC"' in resp.text
 

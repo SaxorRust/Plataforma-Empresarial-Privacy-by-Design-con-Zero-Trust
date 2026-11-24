@@ -385,7 +385,7 @@ def test_register_login_jwt_me_and_logout_revocation():
     )
     assert bad_login.status_code == 401
 
-    # Login exitoso -> JWT con amr=["pwd"] y timeout de inactividad de 120s
+    # Login exitoso -> JWT con amr=["pwd"] (timeout de inactividad implícito en backend, no expuesto)
     login_resp = client.post(
         "/auth/login",
         json={"username": "pac.garcia", "password": "Medico!2026#Strong"},
@@ -394,7 +394,7 @@ def test_register_login_jwt_me_and_logout_revocation():
     token_data = login_resp.json()
     assert token_data["token_type"] == "bearer"
     assert token_data["amr"] == ["pwd"]
-    assert token_data["inactivity_timeout_seconds"] == 120
+    assert "inactivity_timeout_seconds" not in token_data
     access_token = token_data["access_token"]
 
     # Consultar /auth/me autenticado
@@ -404,7 +404,7 @@ def test_register_login_jwt_me_and_logout_revocation():
     assert me_data["username"] == "pac.garcia"
     assert me_data["role"] == "paciente"
     assert me_data["amr"] == ["pwd"]
-    assert me_data["inactivity_timeout_seconds"] == 120
+    assert "inactivity_timeout_seconds" not in me_data
 
     # Token forjado con algoritmo 'none' -> 401
     forged_none = jwt.encode({"sub": str(stored_user.id), "role": "admin_sec"}, key="", algorithm="none")

@@ -152,7 +152,7 @@
       </form>
 
       <div class="gate-footer-note">
-        <span>Zero Trust Default-Deny · Timeout inactividad 2m</span>
+        <span>Zero Trust Default-Deny · FIDO2/WebAuthn + Argon2id</span>
         <span id="gate-health-pill" class="badge badge-info">API</span>
       </div>
     </div>
@@ -191,10 +191,6 @@
           <span id="session-user-label">Verificando...</span>
           <span class="role-chip" id="session-role-badge">rol</span>
         </div>
-
-        <span class="badge badge-info" id="session-idle-timer" title="Cierre automático tras 2 minutos de inactividad (Zero Trust)">
-          Inactividad: 02:00
-        </span>
 
         <button type="button" class="btn btn-danger btn-sm" id="btn-top-logout">
           Cerrar Sesión (Revocar JWT)
@@ -861,7 +857,7 @@
                 <li><strong>SecOps/IAM sin acceso clínico:</strong> <code>admin_sec</code> gestiona cuentas/roles en <code>/auth/users</code>, estado/rotación en Vault, auditoría OPA y TTL; OPA y Vault bloquean (<code>403</code>) cualquier lectura clínica, detokenización PII o borrado ARCO.</li>
                 <li><strong>Auto-registro restringido:</strong> <code>POST /auth/register</code> solo crea cuentas <code>paciente</code>; intentar elegir roles privilegiados retorna <code>403</code> y genera alerta SIEM.</li>
                 <li><strong>Revocación inmediata:</strong> Cambiar el rol o suspender una cuenta revoca en el acto todos sus tokens JWT activos.</li>
-                <li><strong>Timeout de inactividad:</strong> Toda sesión expira automáticamente tras <strong>2 minutos</strong> sin actividad en cliente y servidor.</li>
+                <li><strong>Control de sesiones en servidor:</strong> La expiración y validación de vigencia de sesión se aplican de forma implícita exclusivamente en el backend.</li>
               </ul>
             </div>
           </div>

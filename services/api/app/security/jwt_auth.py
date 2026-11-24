@@ -181,7 +181,7 @@ class JWTService:
                         self._user_sessions[user_id].discard(jti)
                     self._revocation_store.revoke(jti, exp_dt)
                     raise TokenAuthenticationError(
-                        "Sesión expirada por inactividad (2 minutos). Autentícate nuevamente."
+                        "Sesión expirada por inactividad. Autentícate nuevamente."
                     )
                 self._last_activity[jti] = now_ts
                 self._session_expiry.setdefault(jti, exp_dt.timestamp())

@@ -151,7 +151,6 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
     expires_in: int
-    inactivity_timeout_seconds: int = 120
     amr: list[str]
     user: UserPublicResponse
 
@@ -163,7 +162,6 @@ class CurrentUserResponse(BaseModel):
     amr: list[str]
     jti: str
     expires_at: datetime
-    inactivity_timeout_seconds: int = 120
     webauthn_enabled: bool
 
 

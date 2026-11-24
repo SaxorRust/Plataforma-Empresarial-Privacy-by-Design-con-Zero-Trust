@@ -213,6 +213,39 @@ SOC_DASHBOARD_HTML = """<!DOCTYPE html>
       display: none;
     }
     .status-toast.visible { display: flex; justify-content: space-between; align-items: center; }
+    .tz-control {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      padding: 4px 10px;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+    }
+    .tz-control select {
+      border: none;
+      background: transparent;
+      padding: 2px 4px;
+      font-size: 0.79rem;
+      color: var(--text);
+      outline: none;
+    }
+    .tz-control select option {
+      background: var(--bg-elevated);
+      color: var(--text);
+    }
+    .clock-pill {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--teal);
+      background: var(--teal-soft);
+      border: 1px solid hsla(174, 82%, 44%, 0.35);
+      border-radius: 999px;
+      padding: 4px 11px;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -225,6 +258,23 @@ SOC_DASHBOARD_HTML = """<!DOCTYPE html>
       </div>
     </div>
     <div class="toolbar-actions">
+      <span id="soc-clock-badge" class="clock-pill" title="Hora actual en el huso horario seleccionado">--:--:--</span>
+      <label class="tz-control" for="timezone-select">
+        <span>Huso horario:</span>
+        <select id="timezone-select" aria-label="Huso horario de los logs SIEM">
+          <option value="America/Mexico_City" selected>CDMX / México Centro (America/Mexico_City)</option>
+          <option value="America/Monterrey">Monterrey (America/Monterrey)</option>
+          <option value="America/Cancun">Cancún (America/Cancun)</option>
+          <option value="America/Chihuahua">Chihuahua (America/Chihuahua)</option>
+          <option value="America/Tijuana">Tijuana (America/Tijuana)</option>
+          <option value="UTC">UTC (Tiempo Universal Coordinado)</option>
+          <option value="America/New_York">Nueva York (America/New_York)</option>
+          <option value="America/Los_Angeles">Los Ángeles (America/Los_Angeles)</option>
+          <option value="America/Bogota">Bogotá (America/Bogota)</option>
+          <option value="America/Argentina/Buenos_Aires">Buenos Aires (America/Argentina/Buenos_Aires)</option>
+          <option value="Europe/Madrid">Madrid (Europe/Madrid)</option>
+        </select>
+      </label>
       <label style="font-size: 0.8rem; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px;">
         <input type="checkbox" id="auto-refresh-toggle" checked />
         Auto-actualizar (5s)
@@ -324,7 +374,7 @@ SOC_DASHBOARD_HTML = """<!DOCTYPE html>
         <table>
           <thead>
             <tr>
-              <th>ID</th><th>Regla</th><th>Severidad</th><th>Entidad</th><th>Eventos / Umbral</th><th>Ventana</th><th>Resumen</th><th>Estado / Acción SOC</th>
+              <th>ID</th><th id="alerts-ts-header">Hora (America/Mexico_City)</th><th>Regla</th><th>Severidad</th><th>Entidad</th><th>Eventos / Umbral</th><th>Ventana</th><th>Resumen</th><th>Estado / Acción SOC</th>
             </tr>
           </thead>
           <tbody id="alerts-body"></tbody>
@@ -349,7 +399,7 @@ SOC_DASHBOARD_HTML = """<!DOCTYPE html>
         <table>
           <thead>
             <tr>
-              <th>ID</th><th>Timestamp</th><th>MSGID</th><th>Actor</th><th>IP Origen</th><th>Sanitizado (MC-03)</th><th>Mensaje Persistido</th>
+              <th>ID</th><th id="events-ts-header">Timestamp (America/Mexico_City)</th><th>MSGID</th><th>Actor</th><th>IP Origen</th><th>Sanitizado (MC-03)</th><th>Mensaje Persistido</th>
             </tr>
           </thead>
           <tbody id="events-body"></tbody>
@@ -359,6 +409,101 @@ SOC_DASHBOARD_HTML = """<!DOCTYPE html>
   </main>
 
   <script>
+    const DEFAULT_TIMEZONE = "America/Mexico_City";
+    const TZ_STORAGE_KEY = "siem_display_timezone";
+    let currentTimeZone = DEFAULT_TIMEZONE;
+    let cachedAlerts = [];
+    let cachedEvents = [];
+
+    function initTimezoneSelector() {
+      const select = document.getElementById("timezone-select");
+      if (!select) return;
+
+      try {
+        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (browserTz && !Array.from(select.options).some(function (o) { return o.value === browserTz; })) {
+          const opt = document.createElement("option");
+          opt.value = browserTz;
+          opt.textContent = "Navegador (" + browserTz + ")";
+          select.appendChild(opt);
+        }
+      } catch (_) {
+        // Ignore if Intl resolvedOptions is unavailable.
+      }
+
+      let saved = DEFAULT_TIMEZONE;
+      try {
+        const stored = window.localStorage.getItem(TZ_STORAGE_KEY);
+        if (stored && Array.from(select.options).some(function (o) { return o.value === stored; })) {
+          saved = stored;
+        }
+      } catch (_) {
+        saved = DEFAULT_TIMEZONE;
+      }
+
+      currentTimeZone = saved;
+      select.value = currentTimeZone;
+      updateTimezoneHeaders();
+      updateClock();
+
+      select.addEventListener("change", function () {
+        currentTimeZone = select.value || DEFAULT_TIMEZONE;
+        try {
+          window.localStorage.setItem(TZ_STORAGE_KEY, currentTimeZone);
+        } catch (_) {
+          // Ignore storage restrictions.
+        }
+        updateTimezoneHeaders();
+        updateClock();
+        renderAlerts(cachedAlerts);
+        renderEvents(cachedEvents);
+      });
+    }
+
+    function formatTimestamp(isoString, timeZone) {
+      if (!isoString) return "-";
+      const date = new Date(isoString);
+      if (Number.isNaN(date.getTime())) return String(isoString);
+      const tz = timeZone || currentTimeZone || DEFAULT_TIMEZONE;
+      try {
+        const parts = new Intl.DateTimeFormat("en-CA", {
+          timeZone: tz,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hourCycle: "h23",
+          timeZoneName: "short",
+        }).formatToParts(date);
+        const map = {};
+        for (const p of parts) {
+          map[p.type] = p.value;
+        }
+        return (
+          map.year + "-" + map.month + "-" + map.day + " " +
+          map.hour + ":" + map.minute + ":" + map.second +
+          (map.timeZoneName ? " " + map.timeZoneName : "")
+        );
+      } catch (_) {
+        return String(isoString);
+      }
+    }
+
+    function updateTimezoneHeaders() {
+      const alertsHdr = document.getElementById("alerts-ts-header");
+      const eventsHdr = document.getElementById("events-ts-header");
+      if (alertsHdr) alertsHdr.textContent = "Hora (" + currentTimeZone + ")";
+      if (eventsHdr) eventsHdr.textContent = "Timestamp (" + currentTimeZone + ")";
+    }
+
+    function updateClock() {
+      const pill = document.getElementById("soc-clock-badge");
+      if (!pill) return;
+      pill.textContent = formatTimestamp(new Date().toISOString(), currentTimeZone);
+    }
+
     function showSocToast(msg) {
       const box = document.getElementById("soc-toast");
       const txt = document.getElementById("soc-toast-text");
@@ -381,6 +526,78 @@ SOC_DASHBOARD_HTML = """<!DOCTYPE html>
       span.textContent = text;
       td.appendChild(span);
       row.appendChild(td);
+    }
+
+    function renderAlerts(alerts) {
+      const alertsBody = document.getElementById("alerts-body");
+      alertsBody.replaceChildren();
+      if (!alerts.length) {
+        const tr = document.createElement("tr");
+        const td = addCell(tr, "Sin alertas disparadas para el filtro actual.");
+        td.colSpan = 9;
+        alertsBody.appendChild(tr);
+        return;
+      }
+      for (const a of alerts) {
+        const tr = document.createElement("tr");
+        addCell(tr, a.id, true);
+        const tdTs = addCell(tr, formatTimestamp(a.triggered_at, currentTimeZone), true);
+        if (a.triggered_at) tdTs.title = "UTC: " + a.triggered_at;
+        addCell(tr, a.rule_id + " (" + a.rule_name + ")", true);
+        addBadgeCell(tr, a.severity, a.severity === "CRITICAL" ? "CRITICAL" : "HIGH");
+        addCell(tr, a.entity_key, true);
+        addCell(tr, a.event_count + " / " + a.threshold, true);
+        addCell(tr, a.window_seconds + "s", true);
+        addCell(tr, a.summary);
+
+        const tdStatus = document.createElement("td");
+        if (a.acknowledged) {
+          const span = document.createElement("span");
+          span.className = "badge badge-OK";
+          span.textContent = "ACK (" + (a.acknowledged_by || "soc") + ")";
+          if (a.acknowledged_at) {
+            span.title = "Reconocida: " + formatTimestamp(a.acknowledged_at, currentTimeZone) + " (UTC: " + a.acknowledged_at + ")";
+          }
+          tdStatus.appendChild(span);
+        } else {
+          const btnAck = document.createElement("button");
+          btnAck.type = "button";
+          btnAck.className = "btn btn-primary btn-sm";
+          btnAck.textContent = "Reconocer (ACK)";
+          btnAck.addEventListener("click", function () { acknowledgeAlert(a.id); });
+          tdStatus.appendChild(btnAck);
+        }
+        tr.appendChild(tdStatus);
+        alertsBody.appendChild(tr);
+      }
+    }
+
+    function renderEvents(events) {
+      const eventsBody = document.getElementById("events-body");
+      eventsBody.replaceChildren();
+      if (!events.length) {
+        const tr = document.createElement("tr");
+        const td = addCell(tr, "Sin eventos recibidos.");
+        td.colSpan = 7;
+        eventsBody.appendChild(tr);
+        return;
+      }
+      for (const ev of events) {
+        const tr = document.createElement("tr");
+        addCell(tr, ev.id, true);
+        const tdTs = addCell(tr, formatTimestamp(ev.event_timestamp, currentTimeZone), true);
+        tdTs.title = "UTC: " + ev.event_timestamp + (ev.received_at ? " | Recibido UTC: " + ev.received_at : "");
+        addCell(tr, ev.msg_id, true);
+        addCell(tr, ev.actor || "-", true);
+        addCell(tr, ev.source_ip || "-", true);
+        if (ev.sanitized) {
+          addBadgeCell(tr, "SI (" + ev.redacted_categories.join(",") + ")", "OK");
+        } else {
+          addCell(tr, "NO");
+        }
+        addCell(tr, ev.message, true);
+        eventsBody.appendChild(tr);
+      }
     }
 
     async function acknowledgeAlert(alertId) {
@@ -429,6 +646,9 @@ SOC_DASHBOARD_HTML = """<!DOCTYPE html>
       const alerts = await alertsResp.json();
       const events = await eventsResp.json();
 
+      cachedAlerts = Array.isArray(alerts) ? alerts : [];
+      cachedEvents = Array.isArray(events) ? events : [];
+
       document.getElementById("m-events").textContent = String(stats.total_events);
       document.getElementById("m-sanitized").textContent = String(stats.sanitized_events);
       document.getElementById("m-redactions").textContent = String(stats.total_redactions);
@@ -445,67 +665,8 @@ SOC_DASHBOARD_HTML = """<!DOCTYPE html>
         rulesBody.appendChild(tr);
       }
 
-      const alertsBody = document.getElementById("alerts-body");
-      alertsBody.replaceChildren();
-      if (!alerts.length) {
-        const tr = document.createElement("tr");
-        const td = addCell(tr, "Sin alertas disparadas para el filtro actual.");
-        td.colSpan = 8;
-        alertsBody.appendChild(tr);
-      } else {
-        for (const a of alerts) {
-          const tr = document.createElement("tr");
-          addCell(tr, a.id, true);
-          addCell(tr, a.rule_id + " (" + a.rule_name + ")", true);
-          addBadgeCell(tr, a.severity, a.severity === "CRITICAL" ? "CRITICAL" : "HIGH");
-          addCell(tr, a.entity_key, true);
-          addCell(tr, a.event_count + " / " + a.threshold, true);
-          addCell(tr, a.window_seconds + "s", true);
-          addCell(tr, a.summary);
-
-          const tdStatus = document.createElement("td");
-          if (a.acknowledged) {
-            const span = document.createElement("span");
-            span.className = "badge badge-OK";
-            span.textContent = "ACK (" + (a.acknowledged_by || "soc") + ")";
-            tdStatus.appendChild(span);
-          } else {
-            const btnAck = document.createElement("button");
-            btnAck.type = "button";
-            btnAck.className = "btn btn-primary btn-sm";
-            btnAck.textContent = "Reconocer (ACK)";
-            btnAck.addEventListener("click", function () { acknowledgeAlert(a.id); });
-            tdStatus.appendChild(btnAck);
-          }
-          tr.appendChild(tdStatus);
-          alertsBody.appendChild(tr);
-        }
-      }
-
-      const eventsBody = document.getElementById("events-body");
-      eventsBody.replaceChildren();
-      if (!events.length) {
-        const tr = document.createElement("tr");
-        const td = addCell(tr, "Sin eventos recibidos.");
-        td.colSpan = 7;
-        eventsBody.appendChild(tr);
-      } else {
-        for (const ev of events) {
-          const tr = document.createElement("tr");
-          addCell(tr, ev.id, true);
-          addCell(tr, ev.event_timestamp, true);
-          addCell(tr, ev.msg_id, true);
-          addCell(tr, ev.actor || "-", true);
-          addCell(tr, ev.source_ip || "-", true);
-          if (ev.sanitized) {
-            addBadgeCell(tr, "SI (" + ev.redacted_categories.join(",") + ")", "OK");
-          } else {
-            addCell(tr, "NO");
-          }
-          addCell(tr, ev.message, true);
-          eventsBody.appendChild(tr);
-        }
-      }
+      renderAlerts(cachedAlerts);
+      renderEvents(cachedEvents);
     }
 
     document.getElementById("refresh-btn").addEventListener("click", refreshDashboard);
@@ -581,6 +742,7 @@ SOC_DASHBOARD_HTML = """<!DOCTYPE html>
       }
     })();
 
+    setInterval(updateClock, 1000);
     setInterval(function () {
       const toggle = document.getElementById("auto-refresh-toggle");
       if (toggle && toggle.checked) {
@@ -588,6 +750,7 @@ SOC_DASHBOARD_HTML = """<!DOCTYPE html>
       }
     }, 5000);
 
+    initTimezoneSelector();
     refreshDashboard();
   </script>
 </body>

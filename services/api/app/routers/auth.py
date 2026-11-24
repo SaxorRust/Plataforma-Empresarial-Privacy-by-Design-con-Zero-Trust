@@ -197,7 +197,6 @@ def login_with_password(
     return TokenResponse(
         access_token=access_token,
         expires_in=jwt_service.expire_seconds,
-        inactivity_timeout_seconds=jwt_service.inactivity_timeout_seconds,
         amr=amr,
         user=_to_public_user(user),
     )
@@ -211,7 +210,6 @@ def login_with_password(
 def get_me(
     current_user: AuthenticatedUser = Depends(get_current_user),
     repo: UserRepository = Depends(get_user_repository),
-    jwt_service: JWTService = Depends(get_jwt_service),
 ) -> CurrentUserResponse:
     try:
         user = repo.get_user_by_id(current_user.user_id)
@@ -233,7 +231,6 @@ def get_me(
         amr=current_user.amr,
         jti=current_user.jti,
         expires_at=current_user.exp,
-        inactivity_timeout_seconds=jwt_service.inactivity_timeout_seconds,
         webauthn_enabled=user.webauthn_enabled,
     )
 
@@ -459,7 +456,6 @@ def webauthn_login_complete(
     return TokenResponse(
         access_token=access_token,
         expires_in=jwt_service.expire_seconds,
-        inactivity_timeout_seconds=jwt_service.inactivity_timeout_seconds,
         amr=amr,
         user=_to_public_user(user),
     )

@@ -23,7 +23,7 @@ Todas las contraseñas cumplen la política **OWASP A07** de la plataforma (mín
 > **Nota Zero Trust (Sin cuenta `super_admin`):**
 > - Bajo **Mínimo Privilegio (*Least Privilege*)** y **Separación de Funciones (*Separation of Duties*)**, la plataforma **no utiliza ninguna cuenta `super_admin`**.
 > - **`admin_sec`** administra identidades y roles institucionales en la pestaña *6. Gestión de Cuentas* (`/auth/users*`) junto con SecOps (Vault/OPA/TTL), mientras que OPA y Vault bloquean (`403 Forbidden`) cualquier acceso de `admin_sec` a expedientes clínicos, PII directa o borrado ARCO.
-> - Todas las sesiones expiran automáticamente tras **2 minutos de inactividad** en cliente y servidor.
+> - Todas las sesiones expiran de forma **implícita en el backend** tras 2 minutos de inactividad (sin contador visible ni accesible en la interfaz).
 
 ---
 

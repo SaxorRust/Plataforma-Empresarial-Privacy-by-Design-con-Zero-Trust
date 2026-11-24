@@ -139,14 +139,8 @@
     accessToken: null,
     user: null,
     amr: [],
-    inactivityTimeoutSeconds: 120,
-    lastActivityAt: 0,
     lastClinicalCount: 0,
   };
-
-  let idleIntervalId = null;
-  let idleWarningShown = false;
-  let lastPointerActivityAt = 0;
 
   // --------------------------------------------------------------------------
   // Base64URL helpers for WebAuthn / FIDO2 ArrayBuffer conversions
@@ -389,85 +383,6 @@
     }
   }
 
-  function formatCountdown(seconds) {
-    const safe = Math.max(0, Math.floor(seconds));
-    const mins = String(Math.floor(safe / 60)).padStart(2, "0");
-    const secs = String(safe % 60).padStart(2, "0");
-    return mins + ":" + secs;
-  }
-
-  function updateIdleTimerBadge(remainingSeconds) {
-    const badge = byId("session-idle-timer");
-    if (!badge) return;
-    badge.textContent = "Inactividad: " + formatCountdown(remainingSeconds);
-    if (remainingSeconds <= 30) {
-      badge.className = "badge badge-warn";
-    } else {
-      badge.className = "badge badge-info";
-    }
-  }
-
-  function recordUserActivity() {
-    if (!state.accessToken) return;
-    state.lastActivityAt = Date.now();
-    idleWarningShown = false;
-    updateIdleTimerBadge(state.inactivityTimeoutSeconds);
-  }
-
-  function stopInactivityMonitor() {
-    if (idleIntervalId !== null) {
-      clearInterval(idleIntervalId);
-      idleIntervalId = null;
-    }
-    idleWarningShown = false;
-  }
-
-  async function expireSessionByInactivity() {
-    stopInactivityMonitor();
-    const activeToken = state.accessToken;
-    state.accessToken = null;
-    if (activeToken) {
-      try {
-        await fetch("/auth/logout", {
-          method: "POST",
-          headers: { Authorization: "Bearer " + activeToken },
-        });
-      } catch (_) {
-        // Best-effort revocation; backend also enforces 2-minute inactivity timeout.
-      }
-    }
-    lockWorkspace("Sesión cerrada automáticamente tras 2 minutos de inactividad (Zero Trust).");
-  }
-
-  function startInactivityMonitor(timeoutSeconds) {
-    stopInactivityMonitor();
-    state.inactivityTimeoutSeconds = timeoutSeconds && timeoutSeconds > 0 ? timeoutSeconds : 120;
-    state.lastActivityAt = Date.now();
-    idleWarningShown = false;
-    updateIdleTimerBadge(state.inactivityTimeoutSeconds);
-
-    idleIntervalId = setInterval(function () {
-      if (!state.accessToken) {
-        stopInactivityMonitor();
-        return;
-      }
-      const elapsedSec = (Date.now() - state.lastActivityAt) / 1000;
-      const remainingSec = state.inactivityTimeoutSeconds - elapsedSec;
-      if (remainingSec <= 0) {
-        expireSessionByInactivity();
-        return;
-      }
-      updateIdleTimerBadge(remainingSec);
-      if (remainingSec <= 30 && !idleWarningShown) {
-        idleWarningShown = true;
-        showToast(
-          "Advertencia Zero Trust: tu sesión se cerrará en " + Math.ceil(remainingSec) + "s por inactividad.",
-          "warn"
-        );
-      }
-    }, 1000);
-  }
-
   function clearSensitiveDom() {
     byId("auth-me-output").textContent = "";
     byId("vault-inspector-output").textContent = "Sin operaciones activas.";
@@ -495,7 +410,6 @@
     state.accessToken = tokenData.access_token;
     state.user = tokenData.user;
     state.amr = tokenData.amr || ["pwd"];
-    const idleSecs = tokenData.inactivity_timeout_seconds || 120;
 
     // Verify token directly against /auth/me before showing the application shell
     const meRes = await apiRequest("GET", "/auth/me");
@@ -510,7 +424,6 @@
     byId("session-role-badge").textContent = state.user.role;
     setSelectedPurpose(ROLE_DEFAULT_PURPOSE[state.user.role] || "atencion_medica");
     applyRoleVisibility(state.user.role);
-    startInactivityMonitor(meRes.data.inactivity_timeout_seconds || idleSecs);
 
     byId("auth-gate").classList.add("is-hidden");
     byId("app-shell").classList.remove("is-hidden");
@@ -530,7 +443,6 @@
   }
 
   function lockWorkspace(reasonMessage) {
-    stopInactivityMonitor();
     state.accessToken = null;
     state.user = null;
     state.amr = [];
@@ -1484,22 +1396,6 @@
   document.addEventListener("DOMContentLoaded", function () {
     configureSiemLink();
     refreshGateHealth();
-
-    // Global user activity listeners for 2-minute Zero Trust inactivity timeout
-    ["pointerdown", "keydown", "scroll", "touchstart", "click"].forEach(function (evtName) {
-      document.addEventListener(evtName, recordUserActivity, { passive: true });
-    });
-    document.addEventListener(
-      "mousemove",
-      function () {
-        const now = Date.now();
-        if (now - lastPointerActivityAt >= 1000) {
-          lastPointerActivityAt = now;
-          recordUserActivity();
-        }
-      },
-      { passive: true }
-    );
 
     // Gate Login / Register tab switching
     const tabLoginBtn = byId("gate-tab-login");

@@ -249,7 +249,12 @@ def _build_module_a_client(
     app.dependency_overrides[dependencies.get_clinical_repository] = lambda: repo
     app.dependency_overrides[dependencies.get_jwt_service] = lambda: jwt_service
 
-    def issue_headers(role: str, purpose: str | None = None) -> dict[str, str]:
+    def issue_headers(
+        role: str,
+        purpose: str | None = None,
+        *,
+        opaque_patient_token: str | None = None,
+    ) -> dict[str, str]:
         user = UserRecord(
             id=uuid4(),
             username=f"{role}_user",
@@ -258,6 +263,7 @@ def _build_module_a_client(
             webauthn_enabled=False,
             is_active=True,
             created_at=datetime.now(timezone.utc),
+            opaque_patient_token=opaque_patient_token,
         )
         token, _, _ = jwt_service.create_access_token(user, amr=["pwd"])
         headers = {"Authorization": f"Bearer {token}"}
@@ -812,4 +818,104 @@ def test_ma03_medico_update_record_happy_path_and_pii_guard():
         headers=medico_headers,
     )
     assert pii_patch.status_code == 422
+
+
+def test_paciente_titular_sees_only_own_record_and_identity_anti_idor():
+    client, _, _, _, headers_for = _build_module_a_client()
+    medico_headers = headers_for("medico", "atencion_medica")
+
+    # 1) Crear expediente del titular y expediente de un tercero
+    own_created = client.post(
+        "/clinical/records/segregated",
+        json={
+            "patient_pii": {
+                "full_name": "María Fernanda Morales Vega",
+                "curp": "MOVM920514MPLRGD07",
+                "nss": "22119248315",
+                "contact_email": "paciente.demo@hospital-zt.local",
+                "contact_phone": "+522221984321",
+            },
+            "clinical_data": {
+                "age_years": 34,
+                "zip_prefix": "72000",
+                "gender": "F",
+                "diagnosis_cie10": "E11.9",
+                "diagnosis_summary": "Control ambulatorio estable",
+                "department": "medicina_interna",
+            },
+        },
+        headers=medico_headers,
+    )
+    assert own_created.status_code == 201
+    own_token = own_created.json()["opaque_patient_token"]
+    own_record_id = own_created.json()["record"]["record_id"]
+
+    other_created = client.post(
+        "/clinical/records/segregated",
+        json={
+            "patient_pii": {
+                "full_name": "Carlos Tercero Privado",
+                "curp": "TEPC850211HPLRNT02",
+                "nss": "99887766554",
+            },
+            "clinical_data": {
+                "age_years": 41,
+                "zip_prefix": "72100",
+                "gender": "M",
+                "diagnosis_cie10": "I10",
+                "diagnosis_summary": "Hipertensión de otro paciente",
+                "department": "cardiologia",
+            },
+        },
+        headers=medico_headers,
+    )
+    assert other_created.status_code == 201
+    other_token = other_created.json()["opaque_patient_token"]
+    other_record_id = other_created.json()["record"]["record_id"]
+
+    own_headers = headers_for(
+        "paciente", "acceso_titular", opaque_patient_token=own_token
+    )
+    unlinked_headers = headers_for("paciente", "acceso_titular")
+
+    # 2) Titular vinculado ve ÚNICAMENTE su propio expediente (minimizado, sin terceros)
+    list_resp = client.get("/clinical/records", headers=own_headers)
+    assert list_resp.status_code == 200
+    body = list_resp.json()
+    assert body["count"] == 1
+    rec = body["records"][0]
+    assert rec["record_id"] == own_record_id
+    assert rec["department"] == "medicina_interna"
+    assert rec["diagnosis_summary"] == "Control ambulatorio estable"
+    assert "opaque_patient_token" not in rec
+    assert "diagnosis_cie10" not in rec
+
+    # 3) Titular puede leer su expediente individual y su propia PII en /clinical/my-identity
+    single_own = client.get(f"/clinical/records/{own_record_id}", headers=own_headers)
+    assert single_own.status_code == 200
+    assert single_own.json()["record"]["record_id"] == own_record_id
+
+    my_id_resp = client.get("/clinical/my-identity", headers=own_headers)
+    assert my_id_resp.status_code == 200
+    assert my_id_resp.json()["patient_pii"]["full_name"] == "María Fernanda Morales Vega"
+    assert my_id_resp.json()["patient_pii"]["curp"] == "MOVM920514MPLRGD07"
+
+    # 4) Anti-IDOR estricto: NO puede leer expediente ajeno ni filtrar por token ajeno ni usar /vault/patients
+    assert client.get(f"/clinical/records/{other_record_id}", headers=own_headers).status_code == 403
+    assert (
+        client.get(
+            f"/clinical/records?opaque_patient_token={other_token}", headers=own_headers
+        ).status_code
+        == 403
+    )
+    assert client.get(f"/vault/patients/{own_token}", headers=own_headers).status_code == 403
+    wrong_purpose_headers = headers_for(
+        "paciente", "marketing_comercial", opaque_patient_token=own_token
+    )
+    assert client.get("/clinical/my-identity", headers=wrong_purpose_headers).status_code == 403
+
+    # 5) Paciente sin token vinculado permanece Fail-Closed (403)
+    assert client.get("/clinical/records", headers=unlinked_headers).status_code == 403
+    assert client.get("/clinical/my-identity", headers=unlinked_headers).status_code == 403
+
 

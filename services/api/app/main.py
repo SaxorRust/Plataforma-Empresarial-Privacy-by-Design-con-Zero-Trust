@@ -15,11 +15,14 @@ from app.routers.ui import clinical_portal
 from app.routers.ui import router as ui_router
 from app.routers.vault import router as vault_router
 from app.security.dependencies import (
+    get_clinical_repository,
     get_password_service,
     get_ttl_sweep_service,
     get_user_repository,
+    get_vault_service,
 )
-from app.security.seed_accounts import seed_default_team_accounts
+from app.security.seed_accounts import seed_default_team_accounts, seed_demo_patient_record
+from app.vault.service import VaultServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -39,14 +42,26 @@ async def lifespan(application: FastAPI):
             pwd_provider = application.dependency_overrides.get(
                 get_password_service, get_password_service
             )
+            clinical_provider = application.dependency_overrides.get(
+                get_clinical_repository, get_clinical_repository
+            )
+            vault_provider = application.dependency_overrides.get(
+                get_vault_service, get_vault_service
+            )
             try:
+                user_repo = repo_provider()
                 seed_default_team_accounts(
-                    repo_provider(),
+                    user_repo,
                     pwd_provider(),
                     suffix=settings.seed_accounts_suffix,
                 )
-            except DatabaseUnavailableError as exc:
-                logger.warning("Se omitió el seed inicial de cuentas (BD no disponible): %s", exc)
+                seed_demo_patient_record(
+                    user_repo,
+                    clinical_provider(),
+                    vault_provider(),
+                )
+            except (DatabaseUnavailableError, VaultServiceError) as exc:
+                logger.warning("Se omitió el seed inicial (BD/Vault no disponibles): %s", exc)
 
     ttl_provider = application.dependency_overrides.get(
         get_ttl_sweep_service, get_ttl_sweep_service

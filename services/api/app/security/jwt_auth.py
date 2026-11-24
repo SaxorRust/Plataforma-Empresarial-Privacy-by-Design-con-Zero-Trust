@@ -113,7 +113,7 @@ class JWTService:
         expires_at = now + timedelta(minutes=self._expire_minutes)
         jti = str(uuid4())
 
-        payload = {
+        payload: dict[str, object] = {
             "sub": str(user.id),
             "username": user.username,
             "role": user.role,
@@ -125,6 +125,8 @@ class JWTService:
             "nbf": int(now.timestamp()),
             "exp": int(expires_at.timestamp()),
         }
+        if user.opaque_patient_token:
+            payload["patient_token"] = user.opaque_patient_token
         token = jwt.encode(payload, self._secret_key, algorithm=self._algorithm)
         now_ts = time.time()
         with self._activity_lock:
@@ -166,6 +168,10 @@ class JWTService:
         if not isinstance(raw_amr, list) or not all(isinstance(item, str) for item in raw_amr):
             raise TokenAuthenticationError("Claim 'amr' malformado.")
 
+        raw_patient_token = payload.get("patient_token")
+        if raw_patient_token is not None and not isinstance(raw_patient_token, str):
+            raise TokenAuthenticationError("Claim 'patient_token' malformado.")
+
         exp_dt = datetime.fromtimestamp(int(payload["exp"]), tz=timezone.utc)
         iat_ts = float(int(payload["iat"]))
         now_ts = time.time()
@@ -195,6 +201,7 @@ class JWTService:
             amr=list(raw_amr),
             jti=jti,
             exp=exp_dt,
+            opaque_patient_token=raw_patient_token,
         )
 
     def revoke_token(self, user: AuthenticatedUser) -> None:

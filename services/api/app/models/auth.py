@@ -24,6 +24,7 @@ class UserRecord:
     webauthn_enabled: bool
     is_active: bool
     created_at: datetime
+    opaque_patient_token: str | None = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class AuthenticatedUser:
     amr: list[str]
     jti: str
     exp: datetime
+    opaque_patient_token: str | None = None
 
 
 def _validate_strong_password(value: str) -> str:

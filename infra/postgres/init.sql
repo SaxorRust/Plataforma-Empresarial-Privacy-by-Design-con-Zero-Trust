@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS auth_identity.users (
     password_hash TEXT NOT NULL, -- Argon2id (salt único + pepper de aplicación)
     webauthn_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    opaque_patient_token VARCHAR(128)
 );
 
 -- Credenciales FIDO2 / WebAuthn (Passkeys)

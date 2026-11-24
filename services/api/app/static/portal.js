@@ -249,6 +249,7 @@
     const isMedico = role === "medico";
     const isAdmin = role === "admin_sec";
     const isAuditor = role === "auditor_arco";
+    const isPaciente = role === "paciente";
 
     const cardSegregated = byId("card-segregated-admission");
     if (cardSegregated) cardSegregated.classList.toggle("is-hidden", !isMedico);
@@ -258,6 +259,9 @@
 
     const cardVault = byId("card-vault-inspector");
     if (cardVault) cardVault.classList.toggle("is-hidden", !(isMedico || isAdmin || isAuditor));
+
+    const cardPatientIdentity = byId("card-patient-identity");
+    if (cardPatientIdentity) cardPatientIdentity.classList.toggle("is-hidden", !isPaciente);
 
     // Filtrado granular dentro de Bóveda Vault:
     // - Estado Vault: admin_sec y auditor_arco
@@ -386,6 +390,10 @@
   function clearSensitiveDom() {
     byId("auth-me-output").textContent = "";
     byId("vault-inspector-output").textContent = "Sin operaciones activas.";
+    const patientIdentityOut = byId("patient-identity-output");
+    if (patientIdentityOut) {
+      patientIdentityOut.textContent = "Haz clic en \"Consultar mis datos personales (Vault)\" para descifrar únicamente tu información titular.";
+    }
     byId("opa-decision-output").textContent = "Sin evaluación activa.";
     byId("export-metrics-output").textContent = "Sin exportación activa.";
     byId("ttl-output").textContent = "Sin consulta TTL activa.";
@@ -434,6 +442,8 @@
     await refreshWebAuthnCredentials();
     if (state.user.role === "admin_sec") {
       await loadAdminUsers();
+    } else if (state.user.role === "paciente") {
+      await loadClinicalRecords();
     }
     showToast(
       "Identidad verificada: " + state.user.username + " [rol=" + state.user.role + ", amr=" + state.amr.join("+") + "]",
@@ -1570,6 +1580,23 @@
     // Tab 2: Clinical & Vault
     byId("btn-seed-clinical-cohort").addEventListener("click", seedClinicalCohort);
     byId("btn-refresh-records").addEventListener("click", loadClinicalRecords);
+
+    const btnPatientIdentity = byId("btn-patient-my-identity");
+    if (btnPatientIdentity) {
+      btnPatientIdentity.addEventListener("click", async function () {
+        const res = await apiRequest("GET", "/clinical/my-identity");
+        const out = byId("patient-identity-output");
+        if (out) {
+          out.textContent = JSON.stringify(res.data, null, 2);
+        }
+        if (res.ok) {
+          showToast("Datos personales titulares descifrados desde Vault (Derecho de Acceso ARCO).", "ok");
+        } else {
+          const detail = res.data && res.data.detail ? res.data.detail : "Sin expediente titular vinculado.";
+          showToast("HTTP " + res.status + ": " + detail, "warn");
+        }
+      });
+    }
 
     byId("form-segregated-record").addEventListener("submit", async function (ev) {
       ev.preventDefault();

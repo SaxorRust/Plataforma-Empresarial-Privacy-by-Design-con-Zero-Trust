@@ -38,6 +38,10 @@ class UserRepository(Protocol):
         is_active: bool | None = None,
     ) -> UserRecord | None: ...
 
+    def set_user_opaque_patient_token(
+        self, user_id: UUID, opaque_patient_token: str | None
+    ) -> UserRecord | None: ...
+
     def update_password_hash(self, user_id: UUID, new_password_hash: str) -> None: ...
 
     def add_webauthn_credential(
@@ -60,7 +64,7 @@ class UserRepository(Protocol):
 class PostgresUserRepository:
     """
     Repositorio PostgreSQL para el esquema `auth_identity`:
-    - `auth_identity.users` (Argon2id hash, rol, estado WebAuthn)
+    - `auth_identity.users` (Argon2id hash, rol, estado WebAuthn, token opaco opcional de titular)
     - `auth_identity.webauthn_credentials` (llaves públicas COSE y sign_count)
     Todas las consultas usan parámetros preparados para prevenir inyección SQL.
     """
@@ -91,6 +95,7 @@ class PostgresUserRepository:
             webauthn_enabled=bool(row[4]),
             is_active=bool(row[5]),
             created_at=row[6],
+            opaque_patient_token=row[7] if len(row) > 7 else None,
         )
 
     @staticmethod
@@ -106,10 +111,16 @@ class PostgresUserRepository:
         )
 
     def ensure_role_constraint(self) -> None:
-        """Elimina cuentas `super_admin` heredadas y garantiza el constraint CHECK de los 6 roles ABAC."""
+        """Elimina cuentas `super_admin` heredadas, garantiza columna `opaque_patient_token` y constraint de los 6 roles ABAC."""
         try:
             with self._connect() as conn:
                 with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        ALTER TABLE auth_identity.users
+                        ADD COLUMN IF NOT EXISTS opaque_patient_token VARCHAR(128)
+                        """
+                    )
                     cur.execute("DROP INDEX IF EXISTS auth_identity.uq_single_super_admin")
                     cur.execute(
                         """
@@ -146,7 +157,7 @@ class PostgresUserRepository:
                         INSERT INTO auth_identity.users (id, username, role, password_hash)
                         VALUES (%s, %s, %s, %s)
                         RETURNING id, username, role, password_hash, webauthn_enabled,
-                                  is_active, created_at
+                                  is_active, created_at, opaque_patient_token
                         """,
                         (user_id, username, role, password_hash),
                     )
@@ -168,7 +179,7 @@ class PostgresUserRepository:
                     cur.execute(
                         """
                         SELECT id, username, role, password_hash, webauthn_enabled,
-                               is_active, created_at
+                               is_active, created_at, opaque_patient_token
                         FROM auth_identity.users
                         WHERE username = %s
                         """,
@@ -187,7 +198,7 @@ class PostgresUserRepository:
                     cur.execute(
                         """
                         SELECT id, username, role, password_hash, webauthn_enabled,
-                               is_active, created_at
+                               is_active, created_at, opaque_patient_token
                         FROM auth_identity.users
                         WHERE id = %s
                         """,
@@ -206,7 +217,7 @@ class PostgresUserRepository:
                     cur.execute(
                         """
                         SELECT id, username, role, password_hash, webauthn_enabled,
-                               is_active, created_at
+                               is_active, created_at, opaque_patient_token
                         FROM auth_identity.users
                         ORDER BY created_at ASC, username ASC
                         """
@@ -236,7 +247,7 @@ class PostgresUserRepository:
                             is_active = COALESCE(%s, is_active)
                         WHERE id = %s
                         RETURNING id, username, role, password_hash, webauthn_enabled,
-                                  is_active, created_at
+                                  is_active, created_at, opaque_patient_token
                         """,
                         (role, is_active, user_id),
                     )
@@ -244,6 +255,31 @@ class PostgresUserRepository:
                 conn.commit()
         except psycopg.OperationalError as exc:
             raise DatabaseUnavailableError("Error de conexión al actualizar usuario.") from exc
+
+        return self._row_to_user(row) if row else None
+
+    def set_user_opaque_patient_token(
+        self, user_id: UUID, opaque_patient_token: str | None
+    ) -> UserRecord | None:
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE auth_identity.users
+                        SET opaque_patient_token = %s
+                        WHERE id = %s
+                        RETURNING id, username, role, password_hash, webauthn_enabled,
+                                  is_active, created_at, opaque_patient_token
+                        """,
+                        (opaque_patient_token, user_id),
+                    )
+                    row = cur.fetchone()
+                conn.commit()
+        except psycopg.OperationalError as exc:
+            raise DatabaseUnavailableError(
+                "Error de conexión al vincular token opaco de titular."
+            ) from exc
 
         return self._row_to_user(row) if row else None
 

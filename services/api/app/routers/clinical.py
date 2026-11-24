@@ -302,11 +302,18 @@ def list_clinical_records(
     clinical_repo: ClinicalRecordRepository = Depends(get_clinical_repository),
     audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> MinimizedRecordListResponse:
+    owner_token = actor.opaque_patient_token if actor.role == "paciente" else None
+    owner_match_for_list = bool(actor.role == "paciente" and owner_token)
+    if actor.role == "paciente" and opaque_patient_token is not None:
+        if not owner_token or opaque_patient_token.strip() != owner_token:
+            owner_match_for_list = False
+
     decision = _authorize_with_opa(
         opa_client,
         actor=actor,
         purpose=purpose,
         action="read_record",
+        resource_owner_match=owner_match_for_list,
         audit_client=audit_client,
         request=request,
     )
@@ -338,11 +345,12 @@ def list_clinical_records(
             )
         opaque_patient_token = opaque_patient_token.strip()
 
+    effective_token_filter = owner_token if actor.role == "paciente" else opaque_patient_token
     allow_sanitized_query = include_sanitized and actor.role == "auditor_arco"
     try:
         records = clinical_repo.list_records(
             department=department,
-            opaque_patient_token=opaque_patient_token,
+            opaque_patient_token=effective_token_filter,
             include_sanitized=allow_sanitized_query,
         )
     except DatabaseUnavailableError as exc:
@@ -352,9 +360,10 @@ def list_clinical_records(
         ) from exc
 
     minimized_records: list[dict] = []
-    decision_cache: dict[tuple[str, bool], OPADecision] = {}
+    decision_cache: dict[tuple[str, bool, bool], OPADecision] = {}
     for rec in records:
-        cache_key = (rec.purpose_scope, rec.is_sanitized)
+        rec_owner_match = bool(owner_token and rec.opaque_patient_token == owner_token)
+        cache_key = (rec.purpose_scope, rec.is_sanitized, rec_owner_match)
         rec_decision = decision_cache.get(cache_key)
         if rec_decision is None:
             try:
@@ -364,6 +373,7 @@ def list_clinical_records(
                     action="read_record",
                     resource_purpose=rec.purpose_scope,
                     is_sanitized=rec.is_sanitized,
+                    resource_owner_match=rec_owner_match,
                 )
             except OPAServiceError as exc:
                 raise _handle_opa_error(exc) from exc
@@ -396,6 +406,57 @@ def list_clinical_records(
 
 
 @router.get(
+    "/my-identity",
+    response_model=DetokenizePatientResponse,
+    summary="Derecho de Acceso ARCO del titular: consulta sus propios datos personales en Vault",
+)
+def get_own_patient_identity(
+    request: Request,
+    actor: AuthenticatedUser = Depends(require_roles("paciente")),
+    purpose: str = Depends(get_declared_purpose),
+    opa_client: OPAClient = Depends(get_opa_client),
+    vault_service: VaultPIIVaultService = Depends(get_vault_service),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
+) -> DetokenizePatientResponse:
+    owner_token = actor.opaque_patient_token
+    _authorize_with_opa(
+        opa_client,
+        actor=actor,
+        purpose=purpose,
+        action="read_record",
+        resource_owner_match=bool(owner_token),
+        audit_client=audit_client,
+        request=request,
+    )
+
+    if not owner_token:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tu cuenta no tiene un expediente titular vinculado.",
+        )
+
+    try:
+        identity = vault_service.detokenize_patient(owner_token)
+    except VaultServiceError as exc:
+        raise _handle_vault_error(exc) from exc
+
+    audit_client.emit_event(
+        msg_id="CLINICAL_TITULAR_PII_ACCESS",
+        message="Ejercicio de Derecho de Acceso ARCO: titular consultó su propia PII en Vault",
+        severity=SYSLOG_SEVERITY_NOTICE,
+        actor=actor.username,
+        role=actor.role,
+        action="read_own_pii",
+        outcome="success",
+        purpose=purpose,
+        resource="self",
+        records_count=1,
+        request=request,
+    )
+    return identity
+
+
+@router.get(
     "/records/{record_id}",
     response_model=MinimizedRecordResponse,
     summary="Consultar un expediente individual con prevención de singularización y minimización ABAC",
@@ -409,12 +470,14 @@ def get_clinical_record(
     clinical_repo: ClinicalRecordRepository = Depends(get_clinical_repository),
     audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> MinimizedRecordResponse:
-    # Verificación previa por acción: bloquea `analista` y propósitos inválidos antes de tocar BD
+    owner_token = actor.opaque_patient_token if actor.role == "paciente" else None
+    # Verificación previa por acción: bloquea `analista`, propósitos inválidos y pacientes sin titularidad
     _authorize_with_opa(
         opa_client,
         actor=actor,
         purpose=purpose,
         action="read_single_record",
+        resource_owner_match=bool(actor.role == "paciente" and owner_token),
         audit_client=audit_client,
         request=request,
     )
@@ -433,7 +496,8 @@ def get_clinical_record(
             detail="Expediente clínico no encontrado.",
         )
 
-    # Re-evaluación con atributos del recurso (finalidad original y estado de sanitización)
+    # Re-evaluación con atributos del recurso (finalidad, sanitización y titularidad anti-IDOR)
+    rec_owner_match = bool(owner_token and record.opaque_patient_token == owner_token)
     decision = _authorize_with_opa(
         opa_client,
         actor=actor,
@@ -441,6 +505,7 @@ def get_clinical_record(
         action="read_single_record",
         resource_purpose=record.purpose_scope,
         is_sanitized=record.is_sanitized,
+        resource_owner_match=rec_owner_match,
         audit_client=audit_client,
         request=request,
     )

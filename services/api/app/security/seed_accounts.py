@@ -1,9 +1,13 @@
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import logging
 
 from app.models.auth import UserRole
+from app.models.vault import PatientPIIRequest
 from app.repositories.auth_repo import DuplicateUsernameError, UserRepository
+from app.repositories.clinical_repo import ClinicalRecordRepository
 from app.security.passwords import Argon2idPasswordService
+from app.vault.service import VaultPIIVaultService, VaultServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -62,3 +66,61 @@ def seed_default_team_accounts(
             ", ".join(created_usernames),
         )
     return created_usernames
+
+
+def seed_demo_patient_record(
+    user_repo: UserRepository,
+    clinical_repo: ClinicalRecordRepository,
+    vault_service: VaultPIIVaultService,
+) -> str | None:
+    """
+    Aprovisiona de forma idempotente un expediente segregado (Vault PII + PostgreSQL)
+    vinculado exclusivamente al titular `paciente_demo` mediante su `opaque_patient_token`,
+    si aún no cuenta con uno asignado.
+    """
+    patient_user = user_repo.get_user_by_username("paciente_demo")
+    if patient_user is None or patient_user.role != "paciente":
+        return None
+    if patient_user.opaque_patient_token:
+        return None
+
+    link_fn = getattr(user_repo, "set_user_opaque_patient_token", None)
+    if not callable(link_fn):
+        return None
+
+    demo_pii = PatientPIIRequest(
+        full_name="María Fernanda Morales Vega",
+        curp="MOVM920514MPLRGD07",
+        nss="22119248315",
+        contact_email="paciente.demo@hospital-zt.local",
+        contact_phone="+522221984321",
+    )
+    tokenized = vault_service.tokenize_patient(demo_pii)
+    try:
+        clinical_repo.create_record(
+            opaque_patient_token=tokenized.opaque_patient_token,
+            age_years=34,
+            zip_prefix="72000",
+            gender="F",
+            diagnosis_cie10="E11.9",
+            diagnosis_summary=(
+                "Control ambulatorio de diabetes mellitus tipo 2; "
+                "evolución estable con seguimiento nutricional y perfil glucémico en metas."
+            ),
+            department="medicina_interna",
+            purpose_scope="atencion_medica",
+            ttl_expires_at=datetime.now(timezone.utc) + timedelta(hours=720),
+        )
+        link_fn(patient_user.id, tokenized.opaque_patient_token)
+    except Exception:
+        try:
+            vault_service.purge_patient(tokenized.opaque_patient_token)
+        except VaultServiceError:
+            pass
+        raise
+
+    logger.info(
+        "Expediente segregado inicial vinculado a paciente_demo (token=%s)",
+        tokenized.opaque_patient_token,
+    )
+    return tokenized.opaque_patient_token

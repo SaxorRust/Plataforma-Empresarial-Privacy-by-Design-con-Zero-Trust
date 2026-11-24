@@ -459,6 +459,22 @@
             </div>
           </div>
 
+          <!-- Titular ARCO Right of Access Card (exclusivo rol paciente) -->
+          <div class="panel-card is-hidden" id="card-patient-identity">
+            <div class="panel-card-header">
+              <h3>Mis Datos Personales Protegidos en Bóveda Vault (Derecho de Acceso ARCO)</h3>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-patient-my-identity">
+                Consultar mis datos personales (Vault)
+              </button>
+            </div>
+            <p class="panel-desc">
+              Tus identificadores directos (nombre completo, CURP, NSS, correo y teléfono) viven cifrados aparte en
+              <strong>HashiCorp Vault</strong> (Transit AEAD + KV v2) y nunca se mezclan con tus diagnósticos en PostgreSQL.
+              Este acceso usa exclusivamente tu token opaco firmado en tu JWT (<code>GET /clinical/my-identity</code>, sin IDOR).
+            </p>
+            <pre class="code-output" id="patient-identity-output">Haz clic en "Consultar mis datos personales (Vault)" para descifrar únicamente tu información titular.</pre>
+          </div>
+
           <!-- Dynamic Minimized Records Table -->
           <div class="panel-card">
             <div class="panel-card-header">

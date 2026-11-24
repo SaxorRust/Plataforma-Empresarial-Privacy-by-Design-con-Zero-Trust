@@ -464,7 +464,6 @@
 
     if (state.accessToken && !opts.skipAuth) {
       headers["Authorization"] = "Bearer " + state.accessToken;
-      recordUserActivity();
     }
 
     const purpose = opts.purpose !== undefined ? opts.purpose : getSelectedPurpose();

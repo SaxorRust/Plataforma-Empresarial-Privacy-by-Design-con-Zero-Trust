@@ -82,6 +82,7 @@ def test_api_portal_ui_and_static_assets():
     assert "generateSecurePassword" in js_resp.text
     assert "handlePurposeChange" in js_resp.text
     assert "inactivityTimeoutSeconds" not in js_resp.text
+    assert "recordUserActivity" not in js_resp.text
     assert "DEMO_PASSWORD" not in js_resp.text
 
 

@@ -99,7 +99,13 @@ echo ""
 echo "--- 4. MC-04 (Regla 2): Simulación de consultas masivas de expedientes -> ALERTA CRÍTICA ---"
 MASS_USER="dr_mass_${SUFFIX}"
 STRONG_PASS="Hospital!2026#ZeroTrust"
-curl -s -o /dev/null -X POST "${API_URL}/auth/register" \
+PROVISION_USER="${PROVISION_USER:-super_admin}"
+PROVISION_PASS="${PROVISION_PASS:-SuperAdmin#2026!ZT}"
+PROVISION_TOKEN="$(curl -s -X POST "${API_URL}/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"${PROVISION_USER}\",\"password\":\"${PROVISION_PASS}\"}" | jq -r '.access_token // empty')"
+curl -s -o /dev/null -X POST "${API_URL}/auth/users" \
+  -H "Authorization: Bearer ${PROVISION_TOKEN}" \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"${MASS_USER}\",\"password\":\"${STRONG_PASS}\",\"role\":\"medico\"}"
 

@@ -28,6 +28,16 @@ class UserRepository(Protocol):
 
     def get_user_by_id(self, user_id: UUID) -> UserRecord | None: ...
 
+    def list_users(self) -> list[UserRecord]: ...
+
+    def update_user(
+        self,
+        user_id: UUID,
+        *,
+        role: UserRole | None = None,
+        is_active: bool | None = None,
+    ) -> UserRecord | None: ...
+
     def update_password_hash(self, user_id: UUID, new_password_hash: str) -> None: ...
 
     def add_webauthn_credential(
@@ -192,6 +202,54 @@ class PostgresUserRepository:
                     row = cur.fetchone()
         except psycopg.OperationalError as exc:
             raise DatabaseUnavailableError("Error de conexión al consultar usuario.") from exc
+
+        return self._row_to_user(row) if row else None
+
+    def list_users(self) -> list[UserRecord]:
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT id, username, role, password_hash, webauthn_enabled,
+                               is_active, created_at
+                        FROM auth_identity.users
+                        ORDER BY created_at ASC, username ASC
+                        """
+                    )
+                    rows = cur.fetchall()
+        except psycopg.OperationalError as exc:
+            raise DatabaseUnavailableError("Error de conexión al listar usuarios.") from exc
+
+        return [self._row_to_user(row) for row in rows]
+
+    def update_user(
+        self,
+        user_id: UUID,
+        *,
+        role: UserRole | None = None,
+        is_active: bool | None = None,
+    ) -> UserRecord | None:
+        if role is None and is_active is None:
+            return self.get_user_by_id(user_id)
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE auth_identity.users
+                        SET role = COALESCE(%s, role),
+                            is_active = COALESCE(%s, is_active)
+                        WHERE id = %s
+                        RETURNING id, username, role, password_hash, webauthn_enabled,
+                                  is_active, created_at
+                        """,
+                        (role, is_active, user_id),
+                    )
+                    row = cur.fetchone()
+                conn.commit()
+        except psycopg.OperationalError as exc:
+            raise DatabaseUnavailableError("Error de conexión al actualizar usuario.") from exc
 
         return self._row_to_user(row) if row else None
 

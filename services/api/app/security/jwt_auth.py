@@ -65,6 +65,7 @@ class JWTService:
         secret_key: str,
         algorithm: str = "HS256",
         expire_minutes: int = 30,
+        inactivity_timeout_seconds: int = 120,
         issuer: str = "Hospital-Privacy-ZeroTrust",
         revocation_store: TokenRevocationStore | None = None,
     ) -> None:
@@ -72,15 +73,36 @@ class JWTService:
             raise ValueError("JWT_SECRET_KEY debe tener al menos 16 caracteres.")
         if algorithm.lower() == "none":
             raise ValueError("El algoritmo JWT 'none' está prohibido por Zero Trust.")
+        if inactivity_timeout_seconds < 0:
+            raise ValueError("inactivity_timeout_seconds debe ser mayor o igual a 0.")
         self._secret_key = secret_key
         self._algorithm = algorithm
         self._expire_minutes = expire_minutes
+        self._inactivity_timeout_seconds = inactivity_timeout_seconds
         self._issuer = issuer
         self._revocation_store = revocation_store or TokenRevocationStore()
+        self._activity_lock = Lock()
+        self._last_activity: dict[str, float] = {}
+        self._session_expiry: dict[str, float] = {}
+        self._user_sessions: dict[UUID, set[str]] = {}
 
     @property
     def expire_seconds(self) -> int:
         return self._expire_minutes * 60
+
+    @property
+    def inactivity_timeout_seconds(self) -> int:
+        return self._inactivity_timeout_seconds
+
+    def _prune_sessions_unlocked(self, now_ts: float) -> None:
+        expired_jtis = [jti for jti, exp_ts in self._session_expiry.items() if exp_ts <= now_ts]
+        for jti in expired_jtis:
+            self._session_expiry.pop(jti, None)
+            self._last_activity.pop(jti, None)
+        for uid in list(self._user_sessions):
+            self._user_sessions[uid].difference_update(expired_jtis)
+            if not self._user_sessions[uid]:
+                del self._user_sessions[uid]
 
     def create_access_token(
         self,
@@ -105,6 +127,12 @@ class JWTService:
             "exp": int(expires_at.timestamp()),
         }
         token = jwt.encode(payload, self._secret_key, algorithm=self._algorithm)
+        now_ts = time.time()
+        with self._activity_lock:
+            self._prune_sessions_unlocked(now_ts)
+            self._last_activity[jti] = now_ts
+            self._session_expiry[jti] = expires_at.timestamp()
+            self._user_sessions.setdefault(user.id, set()).add(jti)
         return token, jti, expires_at
 
     def verify_access_token(self, token: str) -> AuthenticatedUser:
@@ -140,6 +168,26 @@ class JWTService:
             raise TokenAuthenticationError("Claim 'amr' malformado.")
 
         exp_dt = datetime.fromtimestamp(int(payload["exp"]), tz=timezone.utc)
+        iat_ts = float(int(payload["iat"]))
+        now_ts = time.time()
+
+        if self._inactivity_timeout_seconds > 0:
+            with self._activity_lock:
+                self._prune_sessions_unlocked(now_ts)
+                last_seen = self._last_activity.get(jti, iat_ts)
+                if (now_ts - last_seen) > self._inactivity_timeout_seconds:
+                    self._last_activity.pop(jti, None)
+                    self._session_expiry.pop(jti, None)
+                    if user_id in self._user_sessions:
+                        self._user_sessions[user_id].discard(jti)
+                    self._revocation_store.revoke(jti, exp_dt)
+                    raise TokenAuthenticationError(
+                        "Sesión expirada por inactividad (2 minutos). Autentícate nuevamente."
+                    )
+                self._last_activity[jti] = now_ts
+                self._session_expiry.setdefault(jti, exp_dt.timestamp())
+                self._user_sessions.setdefault(user_id, set()).add(jti)
+
         typed_role: UserRole = role  # type: ignore[assignment]
         return AuthenticatedUser(
             user_id=user_id,
@@ -151,4 +199,26 @@ class JWTService:
         )
 
     def revoke_token(self, user: AuthenticatedUser) -> None:
+        with self._activity_lock:
+            self._last_activity.pop(user.jti, None)
+            self._session_expiry.pop(user.jti, None)
+            if user.user_id in self._user_sessions:
+                self._user_sessions[user.user_id].discard(user.jti)
         self._revocation_store.revoke(user.jti, user.exp)
+
+    def revoke_user_sessions(self, user_id: UUID) -> int:
+        """Revoca inmediatamente todas las sesiones JWT activas de un usuario."""
+        now_ts = time.time()
+        revoked_count = 0
+        to_revoke: list[tuple[str, datetime]] = []
+        with self._activity_lock:
+            self._prune_sessions_unlocked(now_ts)
+            jtis = self._user_sessions.pop(user_id, set())
+            for jti in jtis:
+                exp_ts = self._session_expiry.pop(jti, now_ts + self.expire_seconds)
+                self._last_activity.pop(jti, None)
+                to_revoke.append((jti, datetime.fromtimestamp(exp_ts, tz=timezone.utc)))
+        for jti, exp_dt in to_revoke:
+            self._revocation_store.revoke(jti, exp_dt)
+            revoked_count += 1
+        return revoked_count

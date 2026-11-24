@@ -86,15 +86,10 @@
           <input type="text" id="reg-username" class="mono-input" autocomplete="username" placeholder="ej. dra_lopez" required />
         </div>
         <div class="field-group">
-          <label for="reg-role">Rol Institucional (ABAC)</label>
-          <select id="reg-role">
-            <option value="medico">medico (Atención Clínica y Bóveda)</option>
-            <option value="enfermeria">enfermeria (Asistencia / Token Enmascarado)</option>
-            <option value="analista">analista (Estadística Safe Harbor / k,l)</option>
-            <option value="auditor_arco">auditor_arco (Derechos ARCO / NIST 800-88)</option>
-            <option value="admin_sec">admin_sec (SecOps / TTL / Sin Datos Clínicos)</option>
-            <option value="paciente">paciente (Acceso Titular)</option>
-          </select>
+          <label>Rol Asignado (Mínimo Privilegio — Zero Trust)</label>
+          <div class="role-fixed-note" id="reg-role-notice">
+            <strong>paciente</strong> (Acceso Titular). Los roles institucionales y <code>super_admin</code> solo pueden ser gestionados por un administrador en <em>Gestión de Cuentas</em>.
+          </div>
         </div>
         <div class="field-group">
           <label for="reg-password">Contraseña Robusta (OWASP A07)</label>
@@ -157,7 +152,7 @@
       </form>
 
       <div class="gate-footer-note">
-        <span>Zero Trust Default-Deny · JWT 30m</span>
+        <span>Zero Trust Default-Deny · Timeout inactividad 2m</span>
         <span id="gate-health-pill" class="badge badge-info">API</span>
       </div>
     </div>
@@ -192,11 +187,15 @@
           </select>
         </div>
 
-        <div class="session-pill" id="session-indicator">
+        <div class="session-pill" id="session-indicator" title="amr=pwd significa autenticación por contraseña Argon2id; webauthn+fido2 significa Passkey FIDO2.">
           <span class="session-dot active" id="session-dot"></span>
           <span id="session-user-label">Verificando...</span>
           <span class="role-chip" id="session-role-badge">rol</span>
         </div>
+
+        <span class="badge badge-info" id="session-idle-timer" title="Cierre automático tras 2 minutos de inactividad (Zero Trust)">
+          Inactividad: 02:00
+        </span>
 
         <button type="button" class="btn btn-danger btn-sm" id="btn-top-logout">
           Cerrar Sesión (Revocar JWT)
@@ -231,6 +230,10 @@
               <span>5. ARCO, TTL &amp; NIST 800-88</span>
               <span class="nav-code">MB-01/04</span>
             </button>
+            <button type="button" class="nav-btn" id="nav-tab-users" data-tab="tab-users" data-roles="admin_sec,super_admin">
+              <span>6. Gestión de Cuentas</span>
+              <span class="nav-code">IAM</span>
+            </button>
           </nav>
 
           <div class="role-switcher-box">
@@ -243,10 +246,6 @@
           <a class="ext-link" id="link-siem-console" href="https://siem.tralaleritosmigajeros.uk" target="_blank" rel="noopener noreferrer">
             <span>Consola SIEM &amp; SOC (MC-02/04)</span>
             <span>:8080 ↗</span>
-          </a>
-          <a class="ext-link" href="/docs" target="_blank" rel="noopener noreferrer">
-            <span>Especificación OpenAPI</span>
-            <span>/docs ↗</span>
           </a>
         </div>
       </aside>
@@ -444,16 +443,18 @@
                   <button type="button" class="btn btn-secondary btn-sm" id="btn-vault-rotate">Rotar Llave Transit</button>
                 </div>
               </div>
-              <p class="panel-desc">Inspecciona o resuelve un token opaco <code>pat_...</code> bajo doble control ABAC/OPA + Vault.</p>
+              <p class="panel-desc" id="vault-inspector-desc">Operaciones de bóveda restringidas estrictamente por separación de funciones Zero Trust.</p>
 
-              <div class="field-group">
-                <label for="vault-inspect-token">Token Opaco de Paciente (<code>pat_&lt;32 hex&gt;</code>)</label>
-                <input type="text" id="vault-inspect-token" class="mono-input" placeholder="pat_..." />
-              </div>
-              <div class="btn-row">
-                <button type="button" class="btn btn-primary btn-sm" id="btn-vault-detokenize">
-                  Detokenizar PII Directa (GET /vault/patients/{token})
-                </button>
+              <div id="vault-detokenize-section">
+                <div class="field-group">
+                  <label for="vault-inspect-token">Token Opaco de Paciente (<code>pat_&lt;32 hex&gt;</code>)</label>
+                  <input type="text" id="vault-inspect-token" class="mono-input" placeholder="pat_..." />
+                </div>
+                <div class="btn-row">
+                  <button type="button" class="btn btn-primary btn-sm" id="btn-vault-detokenize">
+                    Detokenizar PII Directa (GET /vault/patients/{token})
+                  </button>
+                </div>
               </div>
 
               <div class="field-group mt-14">
@@ -769,6 +770,123 @@
                 </thead>
                 <tbody id="certificates-tbody">
                   <tr><td colspan="6">Haz clic en "Actualizar Certificados".</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================================================================
+             TAB 6: Gestión de Cuentas Institucionales (super_admin / admin_sec)
+             ================================================================== -->
+        <section class="tab-panel" id="tab-users" aria-label="Gestión de Cuentas Institucionales">
+          <div class="section-header">
+            <div>
+              <h2>Gestión de Cuentas e Identidades (IAM Zero Trust)</h2>
+              <p>Aprovisionamiento de roles ABAC, suspensión de cuentas y revocación inmediata de sesiones JWT activas.</p>
+            </div>
+            <div class="btn-row">
+              <button type="button" class="btn btn-primary btn-sm" id="btn-refresh-users">
+                Actualizar Directorio (GET /auth/users)
+              </button>
+            </div>
+          </div>
+
+          <div class="panel-grid-2">
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h3>Aprovisionar Nueva Cuenta Institucional</h3>
+                <span class="badge badge-ok">POST /auth/users</span>
+              </div>
+              <p class="panel-desc">Solo <code>super_admin</code> puede crear o modificar otras cuentas <code>super_admin</code>. Toda alta queda auditada en Syslog RFC 5424.</p>
+              <form id="form-admin-create-user">
+                <div class="field-group">
+                  <label for="admin-new-username">Nombre de usuario</label>
+                  <input type="text" id="admin-new-username" class="mono-input" placeholder="ej. dra_martinez" required />
+                </div>
+                <div class="field-group">
+                  <label for="admin-new-role">Rol Institucional (ABAC)</label>
+                  <select id="admin-new-role">
+                    <option value="medico">medico (Atención Clínica y Detokenización)</option>
+                    <option value="enfermeria">enfermeria (Asistencia / Token Enmascarado)</option>
+                    <option value="analista">analista (Estadística Safe Harbor / k,l)</option>
+                    <option value="auditor_arco">auditor_arco (Derechos ARCO / NIST 800-88)</option>
+                    <option value="admin_sec">admin_sec (SecOps / Vault / TTL / Cuentas)</option>
+                    <option value="paciente">paciente (Acceso Titular)</option>
+                  </select>
+                </div>
+                <div class="field-group">
+                  <label for="admin-new-password">Contraseña Inicial Robusta (OWASP A07)</label>
+                  <div class="password-input-wrap">
+                    <input type="password" id="admin-new-password" autocomplete="new-password" placeholder="Mín. 12 caracteres (Aa1!)" required />
+                    <button
+                      type="button"
+                      class="password-toggle-btn"
+                      id="toggle-admin-password"
+                      data-password-target="admin-new-password"
+                      aria-label="Mostrar contraseña"
+                      aria-pressed="false"
+                      title="Mostrar contraseña"
+                    >
+                      <svg class="icon-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                      <svg class="icon-eye-off is-hidden" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
+                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
+                        <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"></path>
+                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                      </svg>
+                    </button>
+                  </div>
+                  <div class="password-tools">
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-admin-gen-password">
+                      Generar contraseña segura
+                    </button>
+                  </div>
+                </div>
+                <div class="btn-row">
+                  <button type="submit" class="btn btn-primary" id="btn-admin-create-user">
+                    Crear Cuenta Institucional
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h3>Política Zero Trust de Identidades</h3>
+                <span class="badge badge-info">OWASP A01 / A07</span>
+              </div>
+              <p class="panel-desc">Reglas activas aplicadas por el servidor en cada solicitud:</p>
+              <ul class="iam-policy-list">
+                <li><strong>Auto-registro restringido:</strong> <code>POST /auth/register</code> solo crea cuentas <code>paciente</code>; cualquier intento de elegir roles privilegiados recibe <code>403</code> y genera alerta SIEM.</li>
+                <li><strong>Revocación inmediata:</strong> Cambiar el rol o suspender una cuenta revoca en el acto todos sus tokens JWT activos.</li>
+                <li><strong>Timeout de inactividad:</strong> Toda sesión expira automáticamente tras <strong>2 minutos</strong> sin actividad en cliente y servidor.</li>
+                <li><strong>Separación de funciones Vault:</strong> <code>admin_sec</code> gestiona llaves y estado Vault, pero solo <code>medico</code> y <code>super_admin</code> pueden detokenizar PII.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h3>Directorio de Cuentas Activas y Suspendidas</h3>
+              <span class="badge badge-info" id="users-count-badge">0 cuentas</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Usuario</th>
+                    <th>Rol ABAC</th>
+                    <th>Estado</th>
+                    <th>Passkey FIDO2</th>
+                    <th>Acciones de Administración</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-users-tbody">
+                  <tr><td colspan="5">Haz clic en "Actualizar Directorio" para cargar las cuentas registradas.</td></tr>
                 </tbody>
               </table>
             </div>

@@ -40,17 +40,28 @@ else
   exit 1
 fi
 
+PROVISION_USER="${PROVISION_USER:-super_admin}"
+PROVISION_PASS="${PROVISION_PASS:-SuperAdmin#2026!ZT}"
+PROVISION_TOKEN="$(curl -s -X POST "${BASE_URL}/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"${PROVISION_USER}\",\"password\":\"${PROVISION_PASS}\"}" | jq -r '.access_token // empty')"
+if [[ -z "${PROVISION_TOKEN}" ]]; then
+  fail "No se pudo autenticar cuenta administradora (${PROVISION_USER}) para aprovisionar cuentas de prueba"
+  exit 1
+fi
+
 register_and_login() {
   local username="$1"
   local role="$2"
   local password="$3"
 
   local reg_code
-  reg_code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE_URL}/auth/register" \
+  reg_code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE_URL}/auth/users" \
+    -H "Authorization: Bearer ${PROVISION_TOKEN}" \
     -H "Content-Type: application/json" \
     -d "{\"username\":\"${username}\",\"password\":\"${password}\",\"role\":\"${role}\"}")"
   if [[ "${reg_code}" != "201" ]]; then
-    fail "Registro de ${username} (${role}) devolvió HTTP ${reg_code}"
+    fail "Aprovisionamiento de ${username} (${role}) devolvió HTTP ${reg_code}"
     return 1
   fi
 

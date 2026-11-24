@@ -141,7 +141,14 @@
     accessToken: null,
     user: null,
     amr: [],
+    inactivityTimeoutSeconds: 120,
+    lastActivityAt: 0,
+    lastClinicalCount: 0,
   };
+
+  let idleIntervalId = null;
+  let idleWarningShown = false;
+  let lastPointerActivityAt = 0;
 
   // --------------------------------------------------------------------------
   // Base64URL helpers for WebAuthn / FIDO2 ArrayBuffer conversions
@@ -237,7 +244,7 @@
       scopeEl.textContent = ROLE_DESCRIPTIONS[role] || "Acceso gobernado por OPA/ABAC.";
     }
 
-    // Role-specific operational panels
+    // Role-specific operational panels (Separación de funciones Zero Trust)
     const isSuperAdmin = role === "super_admin";
     const isMedico = role === "medico" || isSuperAdmin;
     const isAdmin = role === "admin_sec" || isSuperAdmin;
@@ -251,6 +258,38 @@
 
     const cardVault = byId("card-vault-inspector");
     if (cardVault) cardVault.classList.toggle("is-hidden", !(isMedico || isAdmin || isAuditor));
+
+    // Filtrado granular dentro de Bóveda Vault:
+    // - Estado Vault: admin_sec, auditor_arco, super_admin (NO medico)
+    // - Rotar Llave Transit: admin_sec, super_admin (NO medico ni auditor_arco)
+    // - Detokenizar PII: SOLO medico y super_admin (NO admin_sec ni auditor_arco)
+    const btnVaultStatus = byId("btn-vault-status");
+    if (btnVaultStatus) btnVaultStatus.classList.toggle("is-hidden", !(isAdmin || isAuditor));
+
+    const btnVaultRotate = byId("btn-vault-rotate");
+    if (btnVaultRotate) btnVaultRotate.classList.toggle("is-hidden", !isAdmin);
+
+    const vaultDetokSection = byId("vault-detokenize-section");
+    if (vaultDetokSection) vaultDetokSection.classList.toggle("is-hidden", !isMedico);
+
+    const vaultDesc = byId("vault-inspector-desc");
+    if (vaultDesc) {
+      if (isSuperAdmin) {
+        vaultDesc.textContent = "Acceso total de bóveda: estado, rotación Transit AEAD y detokenización PII auditada en SIEM.";
+      } else if (role === "medico") {
+        vaultDesc.textContent = "Resolución de identidad clínica (detokenización PII) bajo control de rol medico y trazabilidad SIEM.";
+      } else if (role === "admin_sec") {
+        vaultDesc.textContent = "Operaciones SecOps de bóveda (estado y rotación de llave Transit). Separación de funciones: sin acceso a PII.";
+      } else if (role === "auditor_arco") {
+        vaultDesc.textContent = "Auditoría de salud de bóveda HashiCorp Vault (solo lectura de estado, sin detokenización PII).";
+      }
+    }
+
+    const optSuper = byId("opt-admin-role-super");
+    if (optSuper) {
+      optSuper.disabled = !isSuperAdmin;
+      optSuper.hidden = !isSuperAdmin;
+    }
 
     const cardArco = byId("card-arco-erasure");
     if (cardArco) cardArco.classList.toggle("is-hidden", !isAuditor);
@@ -335,6 +374,85 @@
     }
   }
 
+  function formatCountdown(seconds) {
+    const safe = Math.max(0, Math.floor(seconds));
+    const mins = String(Math.floor(safe / 60)).padStart(2, "0");
+    const secs = String(safe % 60).padStart(2, "0");
+    return mins + ":" + secs;
+  }
+
+  function updateIdleTimerBadge(remainingSeconds) {
+    const badge = byId("session-idle-timer");
+    if (!badge) return;
+    badge.textContent = "Inactividad: " + formatCountdown(remainingSeconds);
+    if (remainingSeconds <= 30) {
+      badge.className = "badge badge-warn";
+    } else {
+      badge.className = "badge badge-info";
+    }
+  }
+
+  function recordUserActivity() {
+    if (!state.accessToken) return;
+    state.lastActivityAt = Date.now();
+    idleWarningShown = false;
+    updateIdleTimerBadge(state.inactivityTimeoutSeconds);
+  }
+
+  function stopInactivityMonitor() {
+    if (idleIntervalId !== null) {
+      clearInterval(idleIntervalId);
+      idleIntervalId = null;
+    }
+    idleWarningShown = false;
+  }
+
+  async function expireSessionByInactivity() {
+    stopInactivityMonitor();
+    const activeToken = state.accessToken;
+    state.accessToken = null;
+    if (activeToken) {
+      try {
+        await fetch("/auth/logout", {
+          method: "POST",
+          headers: { Authorization: "Bearer " + activeToken },
+        });
+      } catch (_) {
+        // Best-effort revocation; backend also enforces 2-minute inactivity timeout.
+      }
+    }
+    lockWorkspace("Sesión cerrada automáticamente tras 2 minutos de inactividad (Zero Trust).");
+  }
+
+  function startInactivityMonitor(timeoutSeconds) {
+    stopInactivityMonitor();
+    state.inactivityTimeoutSeconds = timeoutSeconds && timeoutSeconds > 0 ? timeoutSeconds : 120;
+    state.lastActivityAt = Date.now();
+    idleWarningShown = false;
+    updateIdleTimerBadge(state.inactivityTimeoutSeconds);
+
+    idleIntervalId = setInterval(function () {
+      if (!state.accessToken) {
+        stopInactivityMonitor();
+        return;
+      }
+      const elapsedSec = (Date.now() - state.lastActivityAt) / 1000;
+      const remainingSec = state.inactivityTimeoutSeconds - elapsedSec;
+      if (remainingSec <= 0) {
+        expireSessionByInactivity();
+        return;
+      }
+      updateIdleTimerBadge(remainingSec);
+      if (remainingSec <= 30 && !idleWarningShown) {
+        idleWarningShown = true;
+        showToast(
+          "Advertencia Zero Trust: tu sesión se cerrará en " + Math.ceil(remainingSec) + "s por inactividad.",
+          "warn"
+        );
+      }
+    }, 1000);
+  }
+
   function clearSensitiveDom() {
     byId("auth-me-output").textContent = "";
     byId("vault-inspector-output").textContent = "Sin operaciones activas.";
@@ -347,8 +465,13 @@
     byId("certificates-tbody").replaceChildren();
     byId("webauthn-creds-tbody").replaceChildren();
     byId("policy-allowed-fields").replaceChildren();
+    const adminUsersBody = byId("admin-users-tbody");
+    if (adminUsersBody) adminUsersBody.replaceChildren();
     byId("login-password").value = "";
     byId("reg-password").value = "";
+    const adminNewPass = byId("admin-new-password");
+    if (adminNewPass) adminNewPass.value = "";
+    state.lastClinicalCount = 0;
     resetPasswordVisibility();
     syncRegCopyButtonState();
   }
@@ -357,6 +480,7 @@
     state.accessToken = tokenData.access_token;
     state.user = tokenData.user;
     state.amr = tokenData.amr || ["pwd"];
+    const idleSecs = tokenData.inactivity_timeout_seconds || 120;
 
     // Verify token directly against /auth/me before showing the application shell
     const meRes = await apiRequest("GET", "/auth/me");
@@ -371,6 +495,7 @@
     byId("session-role-badge").textContent = state.user.role;
     setSelectedPurpose(ROLE_DEFAULT_PURPOSE[state.user.role] || "atencion_medica");
     applyRoleVisibility(state.user.role);
+    startInactivityMonitor(meRes.data.inactivity_timeout_seconds || idleSecs);
 
     byId("auth-gate").classList.add("is-hidden");
     byId("app-shell").classList.remove("is-hidden");
@@ -387,6 +512,7 @@
   }
 
   function lockWorkspace(reasonMessage) {
+    stopInactivityMonitor();
     state.accessToken = null;
     state.user = null;
     state.amr = [];
@@ -408,6 +534,7 @@
 
     if (state.accessToken && !opts.skipAuth) {
       headers["Authorization"] = "Bearer " + state.accessToken;
+      recordUserActivity();
     }
 
     const purpose = opts.purpose !== undefined ? opts.purpose : getSelectedPurpose();
@@ -852,6 +979,7 @@
       return;
     }
 
+    state.lastClinicalCount = res.data.count || 0;
     renderPolicyBanner(res.data.policy);
     renderClinicalTable(res.data.records || [], res.data.policy);
     showToast("Consulta autorizada por OPA: " + res.data.count + " expedientes proyectados con minimización MA-04.", "ok");
@@ -870,23 +998,44 @@
     }
   }
 
+  let cohortSeedInProgress = false;
+
   async function seedClinicalCohort() {
-    let created = 0;
-    for (let i = 0; i < DEMO_COHORT.length; i++) {
-      const res = await apiRequest("POST", "/clinical/records/segregated", {
-        json: DEMO_COHORT[i],
-        purpose: "atencion_medica",
-      });
-      if (res.status === 201) {
-        created++;
-        byId("vault-inspect-token").value = res.data.opaque_patient_token;
-      }
+    if (cohortSeedInProgress) return;
+    if (state.lastClinicalCount > 0) {
+      const proceed = window.confirm(
+        "Ya existen " +
+          state.lastClinicalCount +
+          " expedientes clínicos registrados. ¿Deseas insertar 6 pacientes de demostración adicionales?"
+      );
+      if (!proceed) return;
     }
-    if (created > 0) {
-      showToast("Cohorte clínica de " + created + " pacientes creada (PII aislada en Vault + atributos en PostgreSQL).", "ok");
-      await loadClinicalRecords();
-    } else {
-      showToast("No se pudo crear la cohorte (verifica rol medico y propósito atencion_medica).", "warn");
+
+    const seedBtn = byId("btn-seed-clinical-cohort");
+    cohortSeedInProgress = true;
+    if (seedBtn) seedBtn.disabled = true;
+
+    let created = 0;
+    try {
+      for (let i = 0; i < DEMO_COHORT.length; i++) {
+        const res = await apiRequest("POST", "/clinical/records/segregated", {
+          json: DEMO_COHORT[i],
+          purpose: "atencion_medica",
+        });
+        if (res.status === 201) {
+          created++;
+          byId("vault-inspect-token").value = res.data.opaque_patient_token;
+        }
+      }
+      if (created > 0) {
+        showToast("Cohorte clínica de " + created + " pacientes creada (PII aislada en Vault + atributos en PostgreSQL).", "ok");
+        await loadClinicalRecords();
+      } else {
+        showToast("No se pudo crear la cohorte (verifica rol medico/super_admin y propósito atencion_medica).", "warn");
+      }
+    } finally {
+      cohortSeedInProgress = false;
+      if (seedBtn) seedBtn.disabled = false;
     }
   }
 
@@ -1162,11 +1311,176 @@
   }
 
   // --------------------------------------------------------------------------
+  // TAB 6: Gestión de Cuentas Institucionales (IAM Zero Trust)
+  // --------------------------------------------------------------------------
+  const ALL_ROLES = [
+    "medico",
+    "enfermeria",
+    "analista",
+    "auditor_arco",
+    "admin_sec",
+    "paciente",
+  ];
+
+  async function loadAdminUsers() {
+    const tbody = byId("admin-users-tbody");
+    const countBadge = byId("users-count-badge");
+    if (!tbody) return;
+    tbody.replaceChildren();
+
+    const res = await apiRequest("GET", "/auth/users");
+    if (!res.ok) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 5;
+      td.textContent = "Acceso denegado (HTTP " + res.status + "): " + (res.data && res.data.detail ? res.data.detail : "Sin permisos");
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+
+    const users = Array.isArray(res.data) ? res.data : [];
+    if (countBadge) countBadge.textContent = users.length + " cuentas";
+
+    if (!users.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 5;
+      td.textContent = "No hay cuentas registradas.";
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+
+    const actorIsSuper = state.user && state.user.role === "super_admin";
+    const actorUsername = state.user ? state.user.username : "";
+
+    users.forEach(function (u) {
+      const tr = document.createElement("tr");
+
+      const tdUser = document.createElement("td");
+      tdUser.className = "mono-cell";
+      tdUser.textContent = u.username + (u.username === actorUsername ? " (tú)" : "");
+      tr.appendChild(tdUser);
+
+      const tdRole = document.createElement("td");
+      const canModifyTarget = actorIsSuper || u.role !== "super_admin";
+      const isSelf = u.username === actorUsername;
+
+      if (canModifyTarget && !isSelf) {
+        const sel = document.createElement("select");
+        sel.className = "admin-role-select";
+        sel.setAttribute("aria-label", "Rol para " + u.username);
+        ALL_ROLES.forEach(function (roleOpt) {
+          if (roleOpt === "super_admin" && !actorIsSuper) return;
+          const opt = document.createElement("option");
+          opt.value = roleOpt;
+          opt.textContent = roleOpt;
+          if (roleOpt === u.role) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        sel.addEventListener("change", async function () {
+          const patchRes = await apiRequest("PATCH", "/auth/users/" + encodeURIComponent(u.id), {
+            json: { role: sel.value },
+          });
+          if (patchRes.ok) {
+            showToast("Rol de '" + u.username + "' actualizado a '" + sel.value + "' y sesiones previas revocadas.", "ok");
+            await loadAdminUsers();
+          } else {
+            showToast("Error (" + patchRes.status + "): " + (patchRes.data && patchRes.data.detail ? patchRes.data.detail : "Rechazado"), "warn");
+            await loadAdminUsers();
+          }
+        });
+        tdRole.appendChild(sel);
+      } else {
+        const chip = document.createElement("span");
+        chip.className = "role-chip";
+        chip.textContent = u.role;
+        tdRole.appendChild(chip);
+      }
+      tr.appendChild(tdRole);
+
+      const tdActive = document.createElement("td");
+      const activeBadge = document.createElement("span");
+      activeBadge.className = "badge " + (u.is_active ? "badge-ok" : "badge-danger");
+      activeBadge.textContent = u.is_active ? "ACTIVA" : "SUSPENDIDA";
+      tdActive.appendChild(activeBadge);
+      tr.appendChild(tdActive);
+
+      const tdWebAuthn = document.createElement("td");
+      tdWebAuthn.textContent = u.webauthn_enabled ? "Habilitada" : "Solo Argon2id";
+      tr.appendChild(tdWebAuthn);
+
+      const tdAct = document.createElement("td");
+      const btnWrap = document.createElement("div");
+      btnWrap.className = "btn-row btn-row-flush";
+
+      if (canModifyTarget && !isSelf) {
+        const btnToggle = document.createElement("button");
+        btnToggle.type = "button";
+        btnToggle.className = "btn " + (u.is_active ? "btn-danger" : "btn-primary") + " btn-sm";
+        btnToggle.textContent = u.is_active ? "Suspender" : "Reactivar";
+        btnToggle.addEventListener("click", async function () {
+          const patchRes = await apiRequest("PATCH", "/auth/users/" + encodeURIComponent(u.id), {
+            json: { is_active: !u.is_active },
+          });
+          if (patchRes.ok) {
+            showToast(
+              "Cuenta '" + u.username + "' " + (patchRes.data.is_active ? "reactivada" : "suspendida y sesiones revocadas") + ".",
+              "ok"
+            );
+            await loadAdminUsers();
+          } else {
+            showToast("Error (" + patchRes.status + "): " + (patchRes.data && patchRes.data.detail ? patchRes.data.detail : "Rechazado"), "warn");
+          }
+        });
+        btnWrap.appendChild(btnToggle);
+      }
+
+      if (canModifyTarget) {
+        const btnRevoke = document.createElement("button");
+        btnRevoke.type = "button";
+        btnRevoke.className = "btn btn-secondary btn-sm";
+        btnRevoke.textContent = "Revocar JWT";
+        btnRevoke.addEventListener("click", async function () {
+          const revRes = await apiRequest("POST", "/auth/users/" + encodeURIComponent(u.id) + "/revoke-sessions");
+          if (revRes.ok) {
+            showToast("Sesiones revocadas para '" + u.username + "': " + revRes.data.revoked_sessions + " JWT.", "ok");
+          } else {
+            showToast("Error (" + revRes.status + "): " + (revRes.data && revRes.data.detail ? revRes.data.detail : "Rechazado"), "warn");
+          }
+        });
+        btnWrap.appendChild(btnRevoke);
+      }
+
+      tdAct.appendChild(btnWrap);
+      tr.appendChild(tdAct);
+      tbody.appendChild(tr);
+    });
+  }
+
+  // --------------------------------------------------------------------------
   // Wire Event Listeners on DOMContentLoaded
   // --------------------------------------------------------------------------
   document.addEventListener("DOMContentLoaded", function () {
     configureSiemLink();
     refreshGateHealth();
+
+    // Global user activity listeners for 2-minute Zero Trust inactivity timeout
+    ["pointerdown", "keydown", "scroll", "touchstart", "click"].forEach(function (evtName) {
+      document.addEventListener(evtName, recordUserActivity, { passive: true });
+    });
+    document.addEventListener(
+      "mousemove",
+      function () {
+        const now = Date.now();
+        if (now - lastPointerActivityAt >= 1000) {
+          lastPointerActivityAt = now;
+          recordUserActivity();
+        }
+      },
+      { passive: true }
+    );
 
     // Gate Login / Register tab switching
     const tabLoginBtn = byId("gate-tab-login");
@@ -1266,11 +1580,10 @@
     formRegister.addEventListener("submit", async function (ev) {
       ev.preventDefault();
       const u = byId("reg-username").value.trim();
-      const r = byId("reg-role").value;
       const p = byId("reg-password").value;
       const res = await apiRequest("POST", "/auth/register", {
         skipAuth: true,
-        json: { username: u, role: r, password: p },
+        json: { username: u, role: "paciente", password: p },
       });
       if (res.status === 201) {
         await handlePasswordLogin(u, p);
@@ -1286,12 +1599,54 @@
 
     document.querySelectorAll(".nav-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        switchTab(btn.getAttribute("data-tab"));
+        const targetTab = btn.getAttribute("data-tab");
+        switchTab(targetTab);
+        if (targetTab === "tab-users") {
+          loadAdminUsers();
+        }
       });
     });
 
     byId("btn-webauthn-register").addEventListener("click", registerWebAuthnPasskey);
     byId("btn-refresh-me").addEventListener("click", refreshCurrentUser);
+
+    // Tab 6: Admin User Management
+    const btnRefreshUsers = byId("btn-refresh-users");
+    if (btnRefreshUsers) btnRefreshUsers.addEventListener("click", loadAdminUsers);
+
+    const btnAdminGenPwd = byId("btn-admin-gen-password");
+    const adminNewPwd = byId("admin-new-password");
+    const adminPwdToggle = byId("toggle-admin-password");
+    if (btnAdminGenPwd && adminNewPwd) {
+      btnAdminGenPwd.addEventListener("click", function () {
+        adminNewPwd.value = generateSecurePassword(16);
+        setPasswordVisibility(adminNewPwd, adminPwdToggle, true);
+        adminNewPwd.focus();
+      });
+    }
+
+    const formAdminCreateUser = byId("form-admin-create-user");
+    if (formAdminCreateUser) {
+      formAdminCreateUser.addEventListener("submit", async function (ev) {
+        ev.preventDefault();
+        const u = byId("admin-new-username").value.trim();
+        const r = byId("admin-new-role").value;
+        const p = byId("admin-new-password").value;
+        const res = await apiRequest("POST", "/auth/users", {
+          json: { username: u, role: r, password: p },
+        });
+        if (res.status === 201) {
+          byId("admin-new-username").value = "";
+          byId("admin-new-password").value = "";
+          resetPasswordVisibility();
+          showToast("Cuenta institucional '" + res.data.username + "' creada con rol '" + res.data.role + "'.", "ok");
+          await loadAdminUsers();
+        } else {
+          const msg = res.data && res.data.detail ? JSON.stringify(res.data.detail) : "Rechazado";
+          showToast("No se pudo crear la cuenta (" + res.status + "): " + msg, "warn");
+        }
+      });
+    }
 
     // Tab 2: Clinical & Vault
     byId("btn-seed-clinical-cohort").addEventListener("click", seedClinicalCohort);
@@ -1339,7 +1694,8 @@
         byId("tel-vault-key").textContent = res.data.transit_key + " v" + res.data.latest_key_version;
         showToast("HashiCorp Vault operativo (Transit + KV v2).", "ok");
       } else {
-        showToast("Consulta de estado Vault requiere rol admin_sec o auditor_arco.", "warn");
+        const detail = res.data && res.data.detail ? res.data.detail : "Requiere rol admin_sec, auditor_arco o super_admin.";
+        showToast("HTTP " + res.status + ": " + detail, "warn");
       }
     });
 
@@ -1350,7 +1706,8 @@
         byId("tel-vault-key").textContent = res.data.transit_key + " v" + res.data.latest_key_version;
         showToast("Llave Transit AEAD rotada a versión v" + res.data.latest_key_version, "ok");
       } else {
-        showToast("Rotación de llave requiere rol admin_sec.", "warn");
+        const detail = res.data && res.data.detail ? res.data.detail : "Requiere rol admin_sec o super_admin.";
+        showToast("HTTP " + res.status + ": " + detail, "warn");
       }
     });
 

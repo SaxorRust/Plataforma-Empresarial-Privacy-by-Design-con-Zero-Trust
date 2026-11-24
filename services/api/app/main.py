@@ -55,11 +55,14 @@ async def lifespan(application: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.5.0",
+    version="0.6.0",
     description=(
         "Plataforma Empresarial Privacy-by-Design con Zero Trust y Auditoría SIEM "
         "(Escenario Hospitalario — BUAP FCC)"
     ),
+    docs_url="/docs" if settings.expose_openapi_docs else None,
+    redoc_url="/redoc" if settings.expose_openapi_docs else None,
+    openapi_url="/openapi.json" if settings.expose_openapi_docs else None,
     lifespan=lifespan,
 )
 

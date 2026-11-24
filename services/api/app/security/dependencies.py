@@ -44,6 +44,7 @@ def _jwt_service_singleton() -> JWTService:
         secret_key=settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
         expire_minutes=settings.jwt_expire_minutes,
+        inactivity_timeout_seconds=settings.session_inactivity_timeout_seconds,
         issuer=settings.app_name,
         revocation_store=TokenRevocationStore(),
     )

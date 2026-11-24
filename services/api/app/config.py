@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "dev_jwt_secret_change_me"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 30
+    session_inactivity_timeout_seconds: int = 120
+    expose_openapi_docs: bool = False
     webauthn_rp_id: str = "tralaleritosmigajeros.uk"
     webauthn_rp_name: str = "Hospital Privacy Zero Trust BUAP"
     webauthn_origin: str = "https://tralaleritosmigajeros.uk"

@@ -26,6 +26,7 @@ def test_owasp_a01_broken_access_control():
     # 1. Acceso sin autenticación a endpoints protegidos -> 401
     for path in (
         "/auth/me",
+        "/auth/users",
         "/clinical/records",
         "/clinical/policy/status",
         "/vault/status",
@@ -34,7 +35,20 @@ def test_owasp_a01_broken_access_control():
     ):
         assert client.get(path).status_code == 401, f"Se esperaba 401 sin token en {path}"
 
-    # 2. Function Creep y separación de funciones -> 403
+    # 2. Escalación de privilegios en auto-registro público -> 403
+    assert (
+        client.post(
+            "/auth/register",
+            json={
+                "username": "atacante_super",
+                "password": "Hospital!2026#ZeroTrust",
+                "role": "super_admin",
+            },
+        ).status_code
+        == 403
+    )
+
+    # 3. Function Creep y separación de funciones -> 403
     assert client.get("/clinical/records", headers=headers_for("medico", None)).status_code == 403
     assert (
         client.get("/clinical/records", headers=headers_for("medico", "publicidad")).status_code
@@ -46,8 +60,15 @@ def test_owasp_a01_broken_access_control():
         ).status_code
         == 403
     )
+    assert (
+        client.get(
+            "/vault/patients/pat_" + "a" * 32,
+            headers=headers_for("admin_sec", "mantenimiento_ttl"),
+        ).status_code
+        == 403
+    )
 
-    # 3. Path traversal / inyección de ruta en token opaco de Vault -> 400 o 404
+    # 4. Path traversal / inyección de ruta en token opaco de Vault -> 400 o 404
     medico_headers = headers_for("medico", "atencion_medica")
     for malicious_token in ("..%2F..%2Fsys%2Fmounts", "pat_invalid", "pat_../../../etc/passwd"):
         resp = client.get(f"/vault/patients/{malicious_token}", headers=medico_headers)

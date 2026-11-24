@@ -81,29 +81,32 @@ El middleware `SecurityHeadersMiddleware` (`services/api/app/middleware.py`) iny
 - `X-Content-Type-Options: nosniff` · `X-Frame-Options: DENY` · `Referrer-Policy: no-referrer`
 - `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` (evita persistir datos clínicos en caché del navegador o proxies)
 - `X-Request-ID` único por petición para trazabilidad en el SIEM.
+- **Protección de OpenAPI / Swagger UI (OWASP A05 / API9):** Las rutas `/docs`, `/redoc` y `/openapi.json` permanecen **deshabilitadas por defecto** (`EXPOSE_OPENAPI_DOCS=false`) para evitar reconocimiento de superficie de ataque por usuarios no autenticados.
 
 ---
 
 ## 3. Módulo A — Gobernanza, Identidad, Bóveda PII y Control ABAC
 
-### 3.1 Autenticación Robusta (`MA-01`)
+### 3.1 Autenticación Robusta y Gestión de Identidades (`MA-01`)
 
-Implementada en `services/api/app/routers/auth.py`, `services/api/app/security/passwords.py`, `services/api/app/security/webauthn.py` y `services/api/app/security/jwt_tokens.py`:
+Implementada en `services/api/app/routers/auth.py`, `services/api/app/security/passwords.py`, `services/api/app/security/webauthn_service.py` y `services/api/app/security/jwt_auth.py`:
 
 - **Argon2id con Salt único + Pepper secreto:** Parámetros endurecidos (`$argon2id$v=19$m=65536,t=3,p=2`, 64 MiB de memoria). Antes de aplicar Argon2id, se antepone un *pepper* secreto derivado por `HMAC-SHA256` (`ARGON2_PEPPER`), de modo que un volcado de la base de datos no permite ataques offline sin comprometer también el secreto de aplicación.
 - **Mitigación de enumeración de usuarios (Timing Attack):** Si el usuario no existe, se ejecuta `verify_dummy()` contra un hash Argon2id real para igualar el tiempo de respuesta.
-- **Política de contraseñas OWASP A07:** Mínimo 12 caracteres, máximo 128, exigiendo mayúscula, minúscula, dígito y símbolo (`UserRegisterRequest.validate_password_strength`). En el portal web (`services/api/app/static/`), se integró puerta de acceso obligatoria (`#auth-gate`), botón accesible de visualizar/ocultar contraseña en login y registro, y un **generador criptográfico de contraseñas de 16 caracteres** basado en `window.crypto.getRandomValues` con *rejection sampling* y mezcla Fisher-Yates.
+- **Política de contraseñas OWASP A07 y mínimo privilegio en registro:** Mínimo 12 caracteres, máximo 128, exigiendo mayúscula, minúscula, dígito y símbolo (`UserRegisterRequest.validate_password_strength`). El auto-registro público (`POST /auth/register`) está restringido estrictamente al rol `paciente` (cualquier intento de escalar a roles privilegiados o `super_admin` retorna `403` y genera alerta `AUTH_PRIVILEGE_ESCALATION_BLOCKED` en el SIEM). En el portal web (`services/api/app/static/`), se integró puerta de acceso obligatoria (`#auth-gate`), visor de contraseña y **generador criptográfico de 16 caracteres** basado en `window.crypto.getRandomValues`.
+- **Gestión de Cuentas (IAM):** `super_admin` y `admin_sec` disponen de los endpoints `GET/POST /auth/users`, `PATCH /auth/users/{id}` y `POST /auth/users/{id}/revoke-sessions` (y la pestaña *6. Gestión de Cuentas*) para aprovisionar roles institucionales, suspender cuentas y revocar sesiones activas en tiempo real; solo `super_admin` puede crear o modificar cuentas `super_admin`.
 - **FIDO2 / WebAuthn (Passkeys):** Flujos completos de registro (`/auth/webauthn/register/{begin,complete}`) y login *passwordless* (`/auth/webauthn/login/{begin,complete}`) usando criptografía asimétrica **ECDSA P-256**, retos criptográficos de un solo uso (*anti-replay*), verificación de origen (`rp_id`) y contador monotónico `sign_count` (*anti-clonación*).
-- **Sesiones JWT Zero Trust:** Firma `HS256` (rechaza explícitamente `alg: none`), TTL de 30 minutos, reclamos `sub`, `role` y `amr` (`["pwd"]` o `["webauthn", "fido2"]`), almacenamiento exclusivo en RAM en el cliente (nunca `localStorage`) y revocación inmediata por `jti` al invocar `POST /auth/logout`.
+- **Sesiones JWT Zero Trust con Timeout de Inactividad (2 minutos):** Firma `HS256` (rechaza `alg: none`), TTL máximo de 30 minutos, **cierre automático tras 2 minutos (120 s) de inactividad** en cliente y servidor (`SESSION_INACTIVITY_TIMEOUT_SECONDS=120`), reclamos `sub`, `role` y `amr` (`["pwd"]` = contraseña Argon2id, o `["webauthn", "fido2"]` = Passkey), almacenamiento exclusivo en RAM y revocación inmediata por `jti` en `POST /auth/logout`.
 
 ### 3.2 Segregación de Datos y Bóveda de Tokenización (`MA-02`)
 
-Implementada en `services/api/app/vault/client.py`, `services/api/app/routers/vault.py` y `services/api/app/routers/clinical.py`:
+Implementada en `services/api/app/vault/service.py`, `services/api/app/routers/vault.py` y `services/api/app/routers/clinical.py`:
 
 - **Aislamiento de PII directa:** El endpoint `POST /clinical/records/segregated` valida primero por Regex que el resumen clínico (`diagnosis_summary`) no contenga accidentalmente CURP, NSS ni correos electrónicos (`HTTP 422` si se detectan).
 - **Cifrado Transit AEAD + KV v2:** Los identificadores directos (`full_name`, `curp`, `nss`, `email`, `phone`) se cifran mediante el motor **Transit** de HashiCorp Vault (`hospital-pii-key`) y el texto cifrado resultante (`vault:v1:...`) se almacena en **KV v2** indexado por un token opaco aleatorio `pat_<32 hex>` (128 bits de entropía).
+- **Separación estricta de funciones en detokenización:** `GET /vault/patients/{token}` está restringido exclusivamente a `medico` y `super_admin`; los roles `admin_sec`, `auditor_arco`, `enfermeria`, `analista` y `paciente` reciben `403 Forbidden` al intentar detokenizar PII.
 - **Atomicidad y compensación:** PostgreSQL almacena únicamente `opaque_patient_token` y los atributos clínicos (`age_years`, `zip_prefix`, `gender`, `diagnosis_cie10`, `diagnosis_summary`, `department`). Si la escritura en PostgreSQL falla, la API ejecuta compensación automática destruyendo el token huérfano en Vault.
-- **Rotación de llaves sin indisponibilidad:** `POST /vault/keys/rotate` (solo `admin_sec`) rota la clave Transit (ej. versión `1 → 2`) manteniendo descifrables los tokens previos sin reexponer texto plano.
+- **Rotación de llaves sin indisponibilidad:** `POST /vault/keys/rotate` (solo `admin_sec` y `super_admin`) rota la clave Transit (ej. versión `1 → 2`) manteniendo descifrables los tokens previos sin reexponer texto plano.
 
 ### 3.3 Prevención de *Function Creep* con OPA/ABAC (`MA-03`)
 
@@ -206,7 +209,7 @@ Antes de insertar cualquier evento en la base SQLite del SIEM, el pipeline aplic
 
 | Dato Sensible Detectado | Mecanismo de Detección | Resultado Persistido |
 | :--- | :--- | :--- |
-| **Tarjetas bancarias (PAN)** | Regex de 13–19 dígitos + validación matemática de **algoritmo de Luhn** | `[REDACTED_CARD:***] ` |
+| **Tarjetas bancarias (PAN)** | Regex de 13–19 dígitos + validación matemática de **algoritmo de Luhn** | `[REDACTED_CARD:***]` |
 | **CURP mexicana** | Patrón oficial de 18 caracteres alfanuméricos | `[REDACTED_CURP:***]` |
 | **NSS (IMSS)** | Patrón contextual de 11 dígitos | `[REDACTED_NSS:***]` |
 | **Tokens JWT** | Patrón `eyJ...\.eyJ...\....` | `[REDACTED_JWT:***]` |
@@ -263,12 +266,12 @@ Todas las verificaciones end-to-end fueron ejecutadas sobre el despliegue real e
 
 | Script de Verificación | Alcance Validado | Resultado | Archivo de Evidencia |
 | :--- | :--- | :---: | :--- |
-| `verify-domain-security.sh` | HTTPS, `CF-Ray`, cabeceras Zero Trust, TLS $\ge$ 1.2, WAF (`/.env` y SQLi `403`) y Access OTP en `siem.` | **`PASS=14 \| WARN=0 \| FAIL=0`** | `docs/evidencias/evidenciaTestbashVM.txt` |
-| `verify-sandboxing-mc01.sh` | `ReadonlyRootfs`, `CapDrop=ALL`, `no-new-privileges`, Seccomp (`fork`, `subprocess`, `mount`, `unshare`, `ptrace`, `AF_PACKET`, `chmod` → `EPERM`) y AppArmor `enforce` | **`PASS=14 \| WARN=0 \| FAIL=0`** | `docs/evidencias/evidenciainfra.txt` |
-| `verify-ma01-ma02.sh` | Registro/Login Argon2id+JWT, WebAuthn begin, Vault Transit+KV v2 (`pat_...`), RBAC `403` analista, rotación llave `1→2`, purga KV v2 y revocación logout (`401`) | **`PASS=14 \| FAIL=0`** | `docs/evidencias/evidenciainfra.txt` |
-| `verify-module-a.sh` | OPA operativo, alta segregada Vault+PG, bloqueos *Function Creep* (`403`) y minimización en `enfermeria`, `analista` y `auditor_arco` | **`PASS=9 \| FAIL=0`** | `docs/evidencias/evidenciasROLprivacidad.txt` |
-| `verify-module-b.sh` | Scheduler TTL activo, barrido con purga en Vault, exportación Safe Harbor + $(k=3, l=3)$ JSON/CSV, borrado ARCO NIST 800-88 `PURGE` y certificados JSON/PDF SHA-256 | **`PASS=8 \| FAIL=0`** | `docs/evidencias/evidenciasROLprivacidad.txt` |
-| `verify-siem-module-c.sh` | Ingesta Syslog RFC 5424 UDP/TCP, sanitización Regex en SQLite y disparo de alertas `RULE-001`, `RULE-002` y `RULE-003` | **`PASS`** | `tests/test_siem_module_c.py` (`38/38 passed`) |
+| `verify-domain-security.sh` | HTTPS, `CF-Ray`, cabeceras Zero Trust, TLS $\ge$ 1.2, WAF (`/.env` y SQLi `403`) y Access OTP en `siem.` | **PASS=14 · WARN=0 · FAIL=0** | `docs/evidencias/evidenciaTestbashVM.txt` |
+| `verify-sandboxing-mc01.sh` | `ReadonlyRootfs`, `CapDrop=ALL`, `no-new-privileges`, Seccomp (`fork`, `subprocess`, `mount`, `unshare`, `ptrace`, `AF_PACKET`, `chmod` → `EPERM`) y AppArmor `enforce` | **PASS=14 · WARN=0 · FAIL=0** | `docs/evidencias/evidenciainfra.txt` |
+| `verify-ma01-ma02.sh` | Aprovisionamiento IAM, login Argon2id+JWT, WebAuthn begin, Vault Transit+KV v2 (`pat_...`), RBAC `403` analista/SecOps, rotación llave `1→2`, purga KV v2 y revocación logout (`401`) | **PASS=14 · FAIL=0** | `docs/evidencias/evidenciainfra.txt` |
+| `verify-module-a.sh` | OPA operativo, alta segregada Vault+PG, bloqueos *Function Creep* (`403`) y minimización en `enfermeria`, `analista` y `auditor_arco` | **PASS=9 · FAIL=0** | `docs/evidencias/evidenciasROLprivacidad.txt` |
+| `verify-module-b.sh` | Scheduler TTL activo, barrido con purga en Vault, exportación Safe Harbor + $(k=3, l=3)$ JSON/CSV, borrado ARCO NIST 800-88 `PURGE` y certificados JSON/PDF SHA-256 | **PASS=8 · FAIL=0** | `docs/evidencias/evidenciasROLprivacidad.txt` |
+| `verify-siem-module-c.sh` | Ingesta Syslog RFC 5424 UDP/TCP, sanitización Regex en SQLite y disparo de alertas `RULE-001`, `RULE-002` y `RULE-003` | **PASS (38/38)** | `tests/test_siem_module_c.py` |
 
 ### 7.2 Evidencias Visuales de Endurecimiento en Cloudflare
 

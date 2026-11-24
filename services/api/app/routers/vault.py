@@ -41,7 +41,7 @@ def _handle_vault_error(exc: VaultServiceError) -> HTTPException:
 def tokenize_patient_pii(
     payload: PatientPIIRequest,
     request: Request,
-    actor: AuthenticatedUser = Depends(require_roles("medico", "enfermeria", "admin_sec")),
+    actor: AuthenticatedUser = Depends(require_roles("medico", "enfermeria")),
     vault_service: VaultPIIVaultService = Depends(get_vault_service),
     audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> TokenizePatientResponse:
@@ -71,7 +71,7 @@ def tokenize_patient_pii(
 def detokenize_patient_pii(
     opaque_patient_token: str,
     request: Request,
-    actor: AuthenticatedUser = Depends(require_roles("medico", "admin_sec")),
+    actor: AuthenticatedUser = Depends(require_roles("medico")),
     vault_service: VaultPIIVaultService = Depends(get_vault_service),
     audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> DetokenizePatientResponse:

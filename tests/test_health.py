@@ -41,12 +41,19 @@ def test_api_portal_ui_and_static_assets():
     assert 'id="toggle-reg-password"' in portal_resp.text
     assert 'id="btn-generate-password"' in portal_resp.text
     assert 'id="btn-copy-reg-password"' in portal_resp.text
+    assert 'id="session-idle-timer"' in portal_resp.text
+    assert 'id="tab-users"' in portal_resp.text
+    assert 'id="reg-role"' not in portal_resp.text
     assert "script-src 'self'" in portal_resp.headers["content-security-policy"]
     assert "style-src 'self'" in portal_resp.headers["content-security-policy"]
     assert "unsafe-inline" not in portal_resp.headers["content-security-policy"]
     assert 'style="' not in portal_resp.text
     assert "<style" not in portal_resp.text
     assert "<script>" not in portal_resp.text
+
+    # 1b. OpenAPI / Swagger UI deshabilitado por defecto (Zero Trust — OWASP A05/API9)
+    assert client.get("/docs").status_code == 404
+    assert client.get("/openapi.json").status_code == 404
 
     # 2. Content negotiation en `/` para navegadores (`Accept: text/html`) vs API (`application/json`)
     browser_root = client.get("/", headers={"Accept": "text/html,application/xhtml+xml"})

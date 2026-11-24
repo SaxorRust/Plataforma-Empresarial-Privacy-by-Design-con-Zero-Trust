@@ -48,7 +48,22 @@ class AuthenticatedUser:
     exp: datetime
 
 
+def _validate_strong_password(value: str) -> str:
+    has_upper = any(ch.isupper() for ch in value)
+    has_lower = any(ch.islower() for ch in value)
+    has_digit = any(ch.isdigit() for ch in value)
+    has_symbol = any(not ch.isalnum() for ch in value)
+    if not (has_upper and has_lower and has_digit and has_symbol):
+        raise ValueError(
+            "La contraseña debe incluir al menos una mayúscula, una minúscula, "
+            "un dígito y un carácter especial."
+        )
+    return value
+
+
 class UserRegisterRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
     username: str = Field(
         ...,
         min_length=3,
@@ -63,23 +78,60 @@ class UserRegisterRequest(BaseModel):
         description="Contraseña robusta (mín. 12 caracteres, mayúscula, minúscula, dígito y símbolo).",
     )
     role: UserRole = Field(
-        default="medico",
-        description="Rol institucional asignado conforme al esquema ABAC.",
+        default="paciente",
+        description="Rol de registro público (Zero Trust: solo se admite 'paciente').",
     )
 
     @field_validator("password")
     @classmethod
     def validate_password_strength(cls, value: str) -> str:
-        has_upper = any(ch.isupper() for ch in value)
-        has_lower = any(ch.islower() for ch in value)
-        has_digit = any(ch.isdigit() for ch in value)
-        has_symbol = any(not ch.isalnum() for ch in value)
-        if not (has_upper and has_lower and has_digit and has_symbol):
-            raise ValueError(
-                "La contraseña debe incluir al menos una mayúscula, una minúscula, "
-                "un dígito y un carácter especial."
-            )
-        return value
+        return _validate_strong_password(value)
+
+
+class AdminUserCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    username: str = Field(
+        ...,
+        min_length=3,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9._-]+$",
+        description="Nombre de usuario institucional único.",
+    )
+    password: str = Field(
+        ...,
+        min_length=12,
+        max_length=128,
+        description="Contraseña robusta (OWASP A07).",
+    )
+    role: UserRole = Field(
+        ...,
+        description="Rol institucional asignado por super_admin o admin_sec.",
+    )
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, value: str) -> str:
+        return _validate_strong_password(value)
+
+
+class AdminUserUpdateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    role: UserRole | None = Field(
+        default=None,
+        description="Nuevo rol ABAC para la cuenta.",
+    )
+    is_active: bool | None = Field(
+        default=None,
+        description="Habilitar (true) o suspender (false) la cuenta.",
+    )
+
+
+class AdminRevokeSessionsResponse(BaseModel):
+    user_id: UUID
+    username: str
+    revoked_sessions: int
 
 
 class UserPublicResponse(BaseModel):
@@ -100,6 +152,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
     expires_in: int
+    inactivity_timeout_seconds: int = 120
     amr: list[str]
     user: UserPublicResponse
 
@@ -111,6 +164,7 @@ class CurrentUserResponse(BaseModel):
     amr: list[str]
     jti: str
     expires_at: datetime
+    inactivity_timeout_seconds: int = 120
     webauthn_enabled: bool
 
 

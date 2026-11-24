@@ -186,15 +186,16 @@ def test_vault_tokenize_detokenize_encryption_isolation_and_purge():
     # Sin JWT -> 401
     assert client.post("/vault/patients/tokenize", json=SAMPLE_PII).status_code == 401
 
-    # Analista no puede tokenizar identificadores directos -> 403
-    assert (
-        client.post(
-            "/vault/patients/tokenize",
-            json=SAMPLE_PII,
-            headers=token_for_role("analista"),
-        ).status_code
-        == 403
-    )
+    # Analista y admin_sec no pueden tokenizar identificadores directos -> 403
+    for blocked_tok_role in ("analista", "admin_sec", "auditor_arco", "paciente"):
+        assert (
+            client.post(
+                "/vault/patients/tokenize",
+                json=SAMPLE_PII,
+                headers=token_for_role(blocked_tok_role),
+            ).status_code
+            == 403
+        )
 
     # Médico tokeniza identificadores directos -> token opaco pat_...
     tok_resp = client.post(
@@ -221,8 +222,8 @@ def test_vault_tokenize_detokenize_encryption_isolation_and_purge():
     assert SAMPLE_PII["nss"] not in serialized_kv
     assert SAMPLE_PII["full_name"] not in serialized_kv
 
-    # Roles sin privilegio (enfermeria, analista, paciente) bloqueados al detokenizar -> 403
-    for blocked_role in ("enfermeria", "analista", "paciente", "auditor_arco"):
+    # Roles sin autoridad clínica (incluyendo admin_sec por separación de funciones) bloqueados -> 403
+    for blocked_role in ("enfermeria", "analista", "paciente", "auditor_arco", "admin_sec"):
         resp = client.get(
             f"/vault/patients/{opaque_token}",
             headers=token_for_role(blocked_role),

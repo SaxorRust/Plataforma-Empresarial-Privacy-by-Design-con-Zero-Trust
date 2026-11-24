@@ -48,6 +48,33 @@ class InMemoryUserRepository:
     def get_user_by_id(self, user_id: UUID):
         return self.users_by_id.get(user_id)
 
+    def list_users(self) -> list:
+        return list(self.users_by_id.values())
+
+    def update_user(
+        self,
+        user_id: UUID,
+        *,
+        role: str | None = None,
+        is_active: bool | None = None,
+    ):
+        from app.models.auth import UserRecord
+
+        user = self.users_by_id.get(user_id)
+        if user is None:
+            return None
+        updated = UserRecord(
+            id=user.id,
+            username=user.username,
+            role=role if role is not None else user.role,  # type: ignore[arg-type]
+            password_hash=user.password_hash,
+            webauthn_enabled=user.webauthn_enabled,
+            is_active=is_active if is_active is not None else user.is_active,
+            created_at=user.created_at,
+        )
+        self.users_by_id[user_id] = updated
+        return updated
+
     def update_password_hash(self, user_id: UUID, new_password_hash: str) -> None:
         from app.models.auth import UserRecord
 
@@ -307,27 +334,39 @@ def test_argon2id_unique_salt_and_pepper_binding():
 def test_register_login_jwt_me_and_logout_revocation():
     client, repo, _, _ = _build_auth_test_client()
 
-    # Contraseña débil rechazada
+    # Contraseña débil rechazada -> 422
     weak_resp = client.post(
         "/auth/register",
-        json={"username": "dr.garcia", "password": "weakpassword", "role": "medico"},
+        json={"username": "pac.garcia", "password": "weakpassword", "role": "paciente"},
     )
     assert weak_resp.status_code == 422
 
-    # Registro válido
+    # Escalación de privilegios bloqueada en registro público -> 403
+    for privileged_role in ("super_admin", "admin_sec", "medico", "auditor_arco"):
+        esc_resp = client.post(
+            "/auth/register",
+            json={
+                "username": f"atacante_{privileged_role}",
+                "password": "Medico!2026#Strong",
+                "role": privileged_role,
+            },
+        )
+        assert esc_resp.status_code == 403
+
+    # Registro público válido (solo rol paciente por mínimo privilegio)
     reg_resp = client.post(
         "/auth/register",
-        json={"username": "dr.garcia", "password": "Medico!2026#Strong", "role": "medico"},
+        json={"username": "pac.garcia", "password": "Medico!2026#Strong"},
     )
     assert reg_resp.status_code == 201
     reg_data = reg_resp.json()
-    assert reg_data["username"] == "dr.garcia"
-    assert reg_data["role"] == "medico"
+    assert reg_data["username"] == "pac.garcia"
+    assert reg_data["role"] == "paciente"
     assert reg_data["webauthn_enabled"] is False
     assert "password_hash" not in reg_data
 
     # El hash persistido en BD es Argon2id (nunca texto plano)
-    stored_user = repo.get_user_by_username("dr.garcia")
+    stored_user = repo.get_user_by_username("pac.garcia")
     assert stored_user is not None
     assert stored_user.password_hash.startswith("$argon2id$")
     assert "Medico!2026#Strong" not in stored_user.password_hash
@@ -335,35 +374,37 @@ def test_register_login_jwt_me_and_logout_revocation():
     # Usuario duplicado -> 409 Conflict
     dup_resp = client.post(
         "/auth/register",
-        json={"username": "dr.garcia", "password": "Medico!2026#Strong", "role": "medico"},
+        json={"username": "pac.garcia", "password": "Medico!2026#Strong", "role": "paciente"},
     )
     assert dup_resp.status_code == 409
 
     # Login con contraseña incorrecta -> 401
     bad_login = client.post(
         "/auth/login",
-        json={"username": "dr.garcia", "password": "Wrong!2026#Password"},
+        json={"username": "pac.garcia", "password": "Wrong!2026#Password"},
     )
     assert bad_login.status_code == 401
 
-    # Login exitoso -> JWT con amr=["pwd"]
+    # Login exitoso -> JWT con amr=["pwd"] y timeout de inactividad de 120s
     login_resp = client.post(
         "/auth/login",
-        json={"username": "dr.garcia", "password": "Medico!2026#Strong"},
+        json={"username": "pac.garcia", "password": "Medico!2026#Strong"},
     )
     assert login_resp.status_code == 200
     token_data = login_resp.json()
     assert token_data["token_type"] == "bearer"
     assert token_data["amr"] == ["pwd"]
+    assert token_data["inactivity_timeout_seconds"] == 120
     access_token = token_data["access_token"]
 
     # Consultar /auth/me autenticado
     me_resp = client.get("/auth/me", headers={"Authorization": f"Bearer {access_token}"})
     assert me_resp.status_code == 200
     me_data = me_resp.json()
-    assert me_data["username"] == "dr.garcia"
-    assert me_data["role"] == "medico"
+    assert me_data["username"] == "pac.garcia"
+    assert me_data["role"] == "paciente"
     assert me_data["amr"] == ["pwd"]
+    assert me_data["inactivity_timeout_seconds"] == 120
 
     # Token forjado con algoritmo 'none' -> 401
     forged_none = jwt.encode({"sub": str(stored_user.id), "role": "admin_sec"}, key="", algorithm="none")
@@ -383,11 +424,11 @@ def test_register_login_jwt_me_and_logout_revocation():
 def test_webauthn_passkey_full_flow_anti_phishing_replay_and_cloning():
     client, _, _, _ = _build_auth_test_client()
 
-    # 1. Crear usuario y obtener sesión JWT inicial con Argon2id
+    # 1. Crear usuario titular y obtener sesión JWT inicial con Argon2id
     assert (
         client.post(
             "/auth/register",
-            json={"username": "dra.lopez", "password": "Doctora!2026#Secure", "role": "medico"},
+            json={"username": "dra.lopez", "password": "Doctora!2026#Secure", "role": "paciente"},
         ).status_code
         == 201
     )
@@ -509,6 +550,107 @@ def test_super_admin_public_registration_is_blocked():
     assert reg.status_code == 403
     assert "super_admin" in reg.json()["detail"]
     assert repo.get_user_by_username("atacante_super") is None
+
+
+def test_admin_user_management_and_session_inactivity_timeout():
+    client, repo, pwd_service, jwt_service = _build_auth_test_client()
+    from app.security.seed_accounts import seed_default_team_accounts
+
+    seed_default_team_accounts(repo, pwd_service, suffix="#2026!ZT")
+
+    super_token = client.post(
+        "/auth/login",
+        json={"username": "super_admin", "password": "SuperAdmin#2026!ZT"},
+    ).json()["access_token"]
+    admin_token = client.post(
+        "/auth/login",
+        json={"username": "admin_sec", "password": "AdminSec#2026!ZT"},
+    ).json()["access_token"]
+    medico_token = client.post(
+        "/auth/login",
+        json={"username": "medico_demo", "password": "Medico#2026!ZT"},
+    ).json()["access_token"]
+
+    super_headers = {"Authorization": f"Bearer {super_token}"}
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    medico_headers = {"Authorization": f"Bearer {medico_token}"}
+
+    # Médico NO puede listar ni crear usuarios -> 403
+    assert client.get("/auth/users", headers=medico_headers).status_code == 403
+
+    # admin_sec puede listar usuarios y crear rol médico, pero NO puede crear super_admin -> 403
+    users_list = client.get("/auth/users", headers=admin_headers)
+    assert users_list.status_code == 200
+    assert len(users_list.json()) == 7
+
+    assert (
+        client.post(
+            "/auth/users",
+            headers=admin_headers,
+            json={
+                "username": "fake_super",
+                "password": "SuperFake#2026!ZT",
+                "role": "super_admin",
+            },
+        ).status_code
+        == 403
+    )
+
+    created = client.post(
+        "/auth/users",
+        headers=admin_headers,
+        json={
+            "username": "dra_nueva",
+            "password": "DoctoraNueva#2026!ZT",
+            "role": "medico",
+        },
+    )
+    assert created.status_code == 201
+    new_user_id = created.json()["id"]
+
+    # Login del usuario nuevo y revocación automática al cambiar rol / suspender
+    new_login = client.post(
+        "/auth/login",
+        json={"username": "dra_nueva", "password": "DoctoraNueva#2026!ZT"},
+    )
+    assert new_login.status_code == 200
+    new_token = new_login.json()["access_token"]
+    assert client.get("/auth/me", headers={"Authorization": f"Bearer {new_token}"}).status_code == 200
+
+    # Cambiar rol revoca sesión previa inmediatamente (Zero Trust)
+    patch_role = client.patch(
+        f"/auth/users/{new_user_id}",
+        headers=super_headers,
+        json={"role": "enfermeria"},
+    )
+    assert patch_role.status_code == 200
+    assert patch_role.json()["role"] == "enfermeria"
+    assert client.get("/auth/me", headers={"Authorization": f"Bearer {new_token}"}).status_code == 401
+
+    # Suspender cuenta impide login posterior
+    patch_suspend = client.patch(
+        f"/auth/users/{new_user_id}",
+        headers=admin_headers,
+        json={"is_active": False},
+    )
+    assert patch_suspend.status_code == 200
+    assert patch_suspend.json()["is_active"] is False
+    assert (
+        client.post(
+            "/auth/login",
+            json={"username": "dra_nueva", "password": "DoctoraNueva#2026!ZT"},
+        ).status_code
+        == 401
+    )
+
+    # Timeout de inactividad (2 minutos = 120s): simular última actividad hace 125s -> 401
+    me_super = client.get("/auth/me", headers=super_headers)
+    assert me_super.status_code == 200
+    jti = me_super.json()["jti"]
+    jwt_service._last_activity[jti] -= 125
+    expired_me = client.get("/auth/me", headers=super_headers)
+    assert expired_me.status_code == 401
+    assert "inactividad" in expired_me.json()["detail"].lower()
 
 
 def test_seed_default_team_accounts_idempotent_and_all_7_logins():

@@ -1,7 +1,16 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
-from app.audit.syslog_client import SYSLOG_SEVERITY_WARNING, SyslogAuditClient
+from app.audit.syslog_client import (
+    SYSLOG_SEVERITY_NOTICE,
+    SYSLOG_SEVERITY_WARNING,
+    SyslogAuditClient,
+)
 from app.models.auth import (
+    AdminRevokeSessionsResponse,
+    AdminUserCreateRequest,
+    AdminUserUpdateRequest,
     AuthenticatedUser,
     CurrentUserResponse,
     LogoutResponse,
@@ -30,12 +39,15 @@ from app.security.dependencies import (
     get_password_service,
     get_user_repository,
     get_webauthn_service,
+    require_roles,
 )
 from app.security.jwt_auth import JWTService
 from app.security.passwords import Argon2idPasswordService
 from app.security.webauthn_service import WebAuthnService, WebAuthnServiceError
 
 router = APIRouter(prefix="/auth", tags=["autenticacion-ma01"])
+
+PUBLIC_SELF_REGISTER_ROLE = "paciente"
 
 
 def _to_public_user(user: UserRecord) -> UserPublicResponse:
@@ -53,7 +65,7 @@ def _to_public_user(user: UserRecord) -> UserPublicResponse:
     "/register",
     response_model=UserPublicResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Registrar usuario con respaldo Argon2id (salt único + pepper)",
+    summary="Auto-registro público Zero Trust (solo rol `paciente` con Argon2id)",
 )
 def register_user(
     payload: UserRegisterRequest,
@@ -62,22 +74,23 @@ def register_user(
     password_service: Argon2idPasswordService = Depends(get_password_service),
     audit_client: SyslogAuditClient = Depends(get_audit_client),
 ) -> UserPublicResponse:
-    if payload.role == "super_admin":
+    if payload.role != PUBLIC_SELF_REGISTER_ROLE:
         audit_client.emit_event(
             msg_id="AUTH_PRIVILEGE_ESCALATION_BLOCKED",
-            message="Intento bloqueado de autorregistro con rol privilegiado super_admin",
+            message=f"Intento de auto-registro público con rol privilegiado '{payload.role}' bloqueado",
             severity=SYSLOG_SEVERITY_WARNING,
             actor=payload.username,
-            role="super_admin",
-            action="register",
+            role=payload.role,
+            action="register_privileged_blocked",
             outcome="denied",
             request=request,
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
-                "Acceso denegado (Zero Trust): el rol 'super_admin' es único y "
-                "no puede crearse mediante registro público."
+                "Acceso denegado (Zero Trust): el registro público solo permite el rol 'paciente'. "
+                "El rol 'super_admin' es único y los roles institucionales deben ser aprovisionados "
+                "por un administrador en POST /auth/users."
             ),
         )
 
@@ -85,7 +98,7 @@ def register_user(
     try:
         user = repo.create_user(
             username=payload.username,
-            role=payload.role,
+            role=PUBLIC_SELF_REGISTER_ROLE,
             password_hash=password_hash,
         )
     except DuplicateUsernameError as exc:
@@ -97,7 +110,7 @@ def register_user(
 
     audit_client.emit_event(
         msg_id="AUTH_REGISTER",
-        message="Alta de usuario con respaldo criptográfico Argon2id",
+        message="Auto-registro público de titular (paciente) con Argon2id",
         actor=user.username,
         role=user.role,
         action="register",
@@ -184,6 +197,7 @@ def login_with_password(
     return TokenResponse(
         access_token=access_token,
         expires_in=jwt_service.expire_seconds,
+        inactivity_timeout_seconds=jwt_service.inactivity_timeout_seconds,
         amr=amr,
         user=_to_public_user(user),
     )
@@ -197,6 +211,7 @@ def login_with_password(
 def get_me(
     current_user: AuthenticatedUser = Depends(get_current_user),
     repo: UserRepository = Depends(get_user_repository),
+    jwt_service: JWTService = Depends(get_jwt_service),
 ) -> CurrentUserResponse:
     try:
         user = repo.get_user_by_id(current_user.user_id)
@@ -218,6 +233,7 @@ def get_me(
         amr=current_user.amr,
         jti=current_user.jti,
         expires_at=current_user.exp,
+        inactivity_timeout_seconds=jwt_service.inactivity_timeout_seconds,
         webauthn_enabled=user.webauthn_enabled,
     )
 
@@ -443,6 +459,7 @@ def webauthn_login_complete(
     return TokenResponse(
         access_token=access_token,
         expires_in=jwt_service.expire_seconds,
+        inactivity_timeout_seconds=jwt_service.inactivity_timeout_seconds,
         amr=amr,
         user=_to_public_user(user),
     )
@@ -506,3 +523,214 @@ def delete_webauthn_credential(
             detail="Passkey no encontrada para el usuario autenticado.",
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _assert_super_admin_guard(
+    *,
+    actor: AuthenticatedUser,
+    target_role: str | None,
+    existing_role: str | None = None,
+) -> None:
+    if target_role == "super_admin" and existing_role != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Acceso denegado (Zero Trust): el rol 'super_admin' es único en la plataforma "
+                "y no puede asignarse a cuentas adicionales."
+            ),
+        )
+    if actor.role != "super_admin" and existing_role == "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Acceso denegado (Zero Trust): solo 'super_admin' puede "
+                "administrar la cuenta 'super_admin'."
+            ),
+        )
+
+
+@router.get(
+    "/users",
+    response_model=list[UserPublicResponse],
+    summary="Listar cuentas institucionales registradas (solo admin_sec o super_admin)",
+)
+def admin_list_users(
+    _actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
+    repo: UserRepository = Depends(get_user_repository),
+) -> list[UserPublicResponse]:
+    try:
+        users = repo.list_users()
+    except DatabaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    return [_to_public_user(user) for user in users]
+
+
+@router.post(
+    "/users",
+    response_model=UserPublicResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Aprovisionar cuenta institucional con rol ABAC (solo admin_sec o super_admin)",
+)
+def admin_create_user(
+    payload: AdminUserCreateRequest,
+    request: Request,
+    actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
+    repo: UserRepository = Depends(get_user_repository),
+    password_service: Argon2idPasswordService = Depends(get_password_service),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
+) -> UserPublicResponse:
+    _assert_super_admin_guard(actor=actor, target_role=payload.role)
+    password_hash = password_service.hash_password(payload.password)
+    try:
+        user = repo.create_user(
+            username=payload.username,
+            role=payload.role,
+            password_hash=password_hash,
+        )
+    except DuplicateUsernameError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except DatabaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+
+    audit_client.emit_event(
+        msg_id="AUTH_USER_PROVISIONED",
+        message=f"Cuenta '{user.username}' aprovisionada con rol '{user.role}'",
+        severity=SYSLOG_SEVERITY_NOTICE,
+        actor=actor.username,
+        role=actor.role,
+        action="admin_create_user",
+        outcome="success",
+        resource=user.username,
+        request=request,
+    )
+    return _to_public_user(user)
+
+
+@router.patch(
+    "/users/{user_id}",
+    response_model=UserPublicResponse,
+    summary="Actualizar rol o estado activo de una cuenta y revocar sus sesiones activas",
+)
+def admin_update_user(
+    user_id: UUID,
+    payload: AdminUserUpdateRequest,
+    request: Request,
+    actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
+    repo: UserRepository = Depends(get_user_repository),
+    jwt_service: JWTService = Depends(get_jwt_service),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
+) -> UserPublicResponse:
+    if payload.role is None and payload.is_active is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debes especificar al menos 'role' o 'is_active' para actualizar la cuenta.",
+        )
+
+    try:
+        existing = repo.get_user_by_id(user_id)
+    except DatabaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cuenta de usuario no encontrada.",
+        )
+
+    _assert_super_admin_guard(
+        actor=actor,
+        target_role=payload.role,
+        existing_role=existing.role,
+    )
+    if existing.id == actor.user_id and (
+        payload.is_active is False or (payload.role is not None and payload.role != actor.role)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No puedes desactivar ni degradar tu propia cuenta en sesión activa.",
+        )
+
+    try:
+        updated = repo.update_user(user_id, role=payload.role, is_active=payload.is_active)
+    except DatabaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+
+    if updated is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cuenta de usuario no encontrada.",
+        )
+
+    # Zero Trust: revocar inmediatamente sesiones activas si cambió rol o se desactivó la cuenta
+    if payload.role is not None or payload.is_active is False:
+        jwt_service.revoke_user_sessions(updated.id)
+
+    audit_client.emit_event(
+        msg_id="AUTH_USER_UPDATED",
+        message=(
+            f"Cuenta '{updated.username}' actualizada "
+            f"(role={updated.role}, is_active={updated.is_active})"
+        ),
+        severity=SYSLOG_SEVERITY_NOTICE,
+        actor=actor.username,
+        role=actor.role,
+        action="admin_update_user",
+        outcome="success",
+        resource=updated.username,
+        request=request,
+    )
+    return _to_public_user(updated)
+
+
+@router.post(
+    "/users/{user_id}/revoke-sessions",
+    response_model=AdminRevokeSessionsResponse,
+    summary="Revocar inmediatamente todas las sesiones JWT activas de un usuario",
+)
+def admin_revoke_user_sessions(
+    user_id: UUID,
+    request: Request,
+    actor: AuthenticatedUser = Depends(require_roles("admin_sec")),
+    repo: UserRepository = Depends(get_user_repository),
+    jwt_service: JWTService = Depends(get_jwt_service),
+    audit_client: SyslogAuditClient = Depends(get_audit_client),
+) -> AdminRevokeSessionsResponse:
+    try:
+        target = repo.get_user_by_id(user_id)
+    except DatabaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cuenta de usuario no encontrada.",
+        )
+
+    _assert_super_admin_guard(actor=actor, target_role=None, existing_role=target.role)
+    revoked_count = jwt_service.revoke_user_sessions(target.id)
+    audit_client.emit_event(
+        msg_id="AUTH_USER_SESSIONS_REVOKED",
+        message=f"Revocación forzada de sesiones para '{target.username}' ({revoked_count} JWT)",
+        severity=SYSLOG_SEVERITY_NOTICE,
+        actor=actor.username,
+        role=actor.role,
+        action="admin_revoke_sessions",
+        outcome="success",
+        resource=target.username,
+        request=request,
+    )
+    return AdminRevokeSessionsResponse(
+        user_id=target.id,
+        username=target.username,
+        revoked_sessions=revoked_count,
+    )

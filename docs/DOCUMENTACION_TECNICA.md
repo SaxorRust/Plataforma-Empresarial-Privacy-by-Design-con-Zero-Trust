@@ -254,7 +254,7 @@ La publicación hacia `tralaleritosmigajeros.uk` se realiza mediante **`cloudfla
 - **SSL/TLS Full (Strict)** + **TLS 1.3** + **HSTS (1 año, `includeSubDomains`)** + redirección forzada HTTP → HTTPS (`301`).
 - **4 Reglas WAF Personalizadas:** bloqueo de archivos sensibles (`/.env`, `/.git`, `/wp-admin`, `..`), sondas SQLi/XSS, métodos HTTP no permitidos y peticiones sin `User-Agent`.
 - **Rate Limiting:** Protección dedicada en `/auth/*` (`10 req / 10 s` por IP → `Block`).
-- **Cloudflare Zero Trust Access:** La consola SIEM (`siem.tralaleritosmigajeros.uk`) exige autenticación previa por **Email One-Time PIN (OTP)** restringida exclusivamente a los correos del equipo SOC BUAP.
+- **Cloudflare Zero Trust Access:** La consola SIEM (`siem.tralaleritosmigajeros.uk`) exige autenticación previa por **Email One-Time PIN (OTP)** restringida exclusivamente a las **cuentas institucionales BUAP** (`@alumno.buap.mx` / `@correo.buap.mx`) autorizadas del equipo SOC.
 
 ---
 

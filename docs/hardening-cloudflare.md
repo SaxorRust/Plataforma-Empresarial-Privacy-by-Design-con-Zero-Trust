@@ -122,8 +122,12 @@ El colector SIEM jamás debe quedar abierto al público. En **Zero Trust → Acc
 2. **Application domain:** `siem.tralaleritosmigajeros.uk`
 3. **Policy name:** `Solo Equipo SOC BUAP`
    - **Action:** `Allow`
-   - **Include → Emails:** Agrega únicamente los correos de **Ubaldo**, **Jezreel** y **Samuel**.
+   - **Include → Emails / Emails ending in:** Agrega únicamente las **cuentas institucionales BUAP** (`@alumno.buap.mx` / `@correo.buap.mx`) autorizadas del equipo SOC (**Ubaldo**, **Jezreel** y **Samuel**). No se permite el acceso con cuentas personales ni de dominios externos.
 4. **Identity provider:** `One-time PIN` (incluido gratis sin configurar IdP externo).
+
+> **Nota operativa (Email OTP con correo institucional BUAP):**
+> - El correo capturado en la pantalla de Cloudflare Access debe coincidir **exactamente** con el registrado en `Include → Emails` (y `One-time PIN` debe estar activo en *Login methods* de la aplicación).
+> - Si el código PIN (`noreply@notify.cloudflare.com`) no aparece en la bandeja principal de Outlook / Microsoft 365 BUAP, revisa **Correo no deseado** o **Cuarentena**.
 
 ---
 

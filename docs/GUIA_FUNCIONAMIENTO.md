@@ -49,7 +49,7 @@ La aplicación implementa **doble barrera de protección** (en el frontend y en 
 | **Contraseña (Argon2id)** | `POST /auth/register` → `POST /auth/login` | Contraseña mínima 12 chars (`Aa1!`), hash `Argon2id` (64 MiB, `t=3`, `p=2`), **Salt único** por usuario + **Pepper secreto** de aplicación (`ARGON2_PEPPER`) y verificación *dummy* anti-enumeración. |
 | **Passkey FIDO2 / WebAuthn** | Registro: `/auth/webauthn/register/{begin,complete}`<br>Login: `/auth/webauthn/login/{begin,complete}` | Autenticación *passwordless* por llave criptográfica asimétrica (ECDSA P-256) ligada al origen (`tralaleritosmigajeros.uk`), reto de un solo uso (anti-replay) y contador de firma monotónico (anti-clonación). |
 | **Sesión JWT Zero Trust** | `GET /auth/me` · `POST /auth/logout` | Algoritmo `HS256` (rechaza `alg: none`), expiración de 30 minutos, claims `sub`, `role`, `amr` (`["pwd"]` o `["webauthn","fido2"]`) y lista de revocación por `jti`. |
-| **Cloudflare Zero Trust Access** | Acceso a `https://siem.tralaleritosmigajeros.uk` | Autenticación perimetral por Email OTP en Cloudflare antes de que la petición llegue a la consola SIEM. |
+| **Cloudflare Zero Trust Access** | Acceso a `https://siem.tralaleritosmigajeros.uk` | Autenticación perimetral por Email OTP en Cloudflare restringida a **cuentas institucionales BUAP** (`@alumno.buap.mx` / `@correo.buap.mx`) autorizadas del equipo SOC. |
 
 ---
 
@@ -125,7 +125,7 @@ Cada petición clínica o de ciclo de vida exige **dos cosas**: tu identidad aut
    - En **5. ARCO, TTL & NIST 800-88**, pega un token `pat_...`, selecciona `NIST_800_88_PURGE` y ejecuta la sanitización.
    - En la tabla de certificados, pulsa **"Verificar SHA-256"** y descarga el certificado en **PDF** y **JSON**.
 5. **Monitorear Auditoría y Alertas en el SIEM:**
-   - Abre `https://siem.tralaleritosmigajeros.uk` (autenticado vía Cloudflare Access OTP) y observa todos los eventos RFC 5424 sanitizados y las alertas de correlación temporal.
+   - Abre `https://siem.tralaleritosmigajeros.uk` (autenticado vía Cloudflare Access OTP con tu **cuenta institucional BUAP** `@alumno.buap.mx` / `@correo.buap.mx` autorizada) y observa todos los eventos RFC 5424 sanitizados y las alertas de correlación temporal.
 
 ---
 

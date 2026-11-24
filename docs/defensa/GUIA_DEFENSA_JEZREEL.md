@@ -17,15 +17,15 @@
 
 | Archivo | Qué hace exactamente |
 | :--- | :--- |
-| `infra/opa/policies/hospital_abac.rego` | Política ABAC en Rego (13/13 pruebas en `hospital_abac_test.rego`). Define `allow`, `reason` y `allowed_fields` por rol, acción y `X-Purpose`. |
+| `infra/opa/policies/hospital_abac.rego` | Política ABAC en Rego (15/15 pruebas en `hospital_abac_test.rego`). Define `allow`, `reason` y `allowed_fields` por rol, acción y `X-Purpose`. |
 | `services/api/app/policy/opa_client.py` | Cliente HTTP hacia `zt-opa` en modo **Fail-Closed** (si OPA falla o no responde, bloquea con `403`). |
 | `services/api/app/policy/minimization.py` | Motor `apply_minimization`: proyecta solo `allowed_fields`, enmascara token en `enfermeria` (`pat_xxxx...yyyy`) y generaliza `age_range` (`30-39`, `90+`) + `zip_generalized` (`72***`) en `analista`. |
 | `services/api/app/routers/clinical.py` | Alta segregada `POST /clinical/records/segregated` (Regex anti-PII en notas + Vault + PG + compensación si PG falla), consultas minimizadas y detokenización auditada. |
-| `services/api/app/lifecycle/ttl_scheduler.py` | `TTLBackgroundScheduler` (ejecución automática en `lifespan`) + barrido manual `POST /lifecycle/ttl/sweep` que purga expirados en PG y tokens huérfanos en Vault. |
-| `services/api/app/lifecycle/anonymizer.py` | Exportador **HIPAA Safe Harbor** (18 IDs removidos, tope `90+`) + retícula adaptativa de **$k$-anonimato y $l$-diversidad** en modo Fail-Closed (`HTTP 422` si no cumple). |
-| `services/api/app/lifecycle/erasure.py` | Motor **NIST SP 800-88** (`CLEAR` 2 pasadas / `PURGE` 3 pasadas en PG, `secure_zero_buffer` en RAM y purga KV v2 en Vault confirmando `CONFIRMED_NOT_FOUND`). |
+| `services/api/app/lifecycle/ttl_worker.py` | `TTLBackgroundScheduler` (ejecución automática en `lifespan`) + barrido manual `POST /lifecycle/ttl/sweep` que purga expirados en PG y tokens huérfanos en Vault. |
+| `services/api/app/lifecycle/anonymization.py` | Exportador **HIPAA Safe Harbor** (18 IDs removidos, tope `90+`) + retícula adaptativa de **$k$-anonimato y $l$-diversidad** en modo Fail-Closed (`HTTP 422` si no cumple). |
+| `services/api/app/lifecycle/nist_sanitization.py` | Motor **NIST SP 800-88** (`CLEAR` 2 pasadas / `PURGE` 3 pasadas en PG, `secure_zero_buffer` en RAM y purga KV v2 en Vault confirmando `CONFIRMED_NOT_FOUND`). |
 | `services/api/app/lifecycle/certificates.py` | Generación de certificados JSON y PDF (`reportlab`) con sello **`SHA-256`** y verificación en tiempo constante (`hmac.compare_digest`). |
-| `.github/workflows/security-owasp.yml` | Pipeline DevSecOps: `pip-audit`, `Bandit`, `Semgrep`, `Gitleaks`, `Trivy`, `CodeQL v4` y `tests/test_owasp_top10_security.py`. |
+| `.github/workflows/security-owasp.yml` | Pipeline DevSecOps: `pip-audit`, `Bandit`, `Semgrep`, `Gitleaks`, `Trivy`, `CodeQL v4` y `tests/test_owasp_top10_security.py` (`43/43 pytest`). |
 
 ---
 

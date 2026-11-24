@@ -19,8 +19,8 @@
 | :--- | :--- |
 | `docker-compose.yml` y `docker-compose.apparmor.yml` | Orquestación de 5 servicios y 5 redes (`edge_net` + 4 redes `internal: true`), `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges:true`, Seccomp y AppArmor. |
 | `services/api/app/security/passwords.py` | `Argon2idPasswordService`: parámetros `m=65536, t=3, p=2`, *pepper* vía `HMAC-SHA256` y `verify_dummy()` anti-enumeración por tiempo. |
-| `services/api/app/security/webauthn.py` y `routers/auth.py` | Flujo FIDO2/WebAuthn (ECDSA P-256, retos de un solo uso, `sign_count` anti-clonación), JWT `HS256` con revocación por `jti` en `/auth/logout`. |
-| `services/api/app/vault/client.py` y `routers/vault.py` | Integración con HashiCorp Vault: cifrado Transit AEAD (`hospital-pii-key`), persistencia en KV v2 con tokens `pat_<32 hex>`, rotación de llaves y purga definitiva. |
+| `services/api/app/security/webauthn_service.py` y `routers/auth.py` | Flujo FIDO2/WebAuthn (ECDSA P-256, retos de un solo uso, `sign_count` anti-clonación), JWT `HS256` con timeout implícito de 2 min y revocación por `jti`, auto-registro restringido a `paciente` e IAM en `admin_sec`. |
+| `services/api/app/vault/service.py` y `routers/vault.py` | Integración con HashiCorp Vault: cifrado Transit AEAD (`hospital-pii-key`), persistencia en KV v2 con tokens `pat_<32 hex>`, detokenización exclusiva `medico`, rotación de llaves y purga definitiva. |
 | `infra/seccomp/api-seccomp.json` | Perfil Seccomp-BPF default-deny (`EPERM`) que bloquea `fork`, `vfork`, `execve`, `mount`, `unshare`, `ptrace`, `chmod` y sockets `AF_PACKET`. |
 | `infra/apparmor/zt-hospital-api` | Perfil AppArmor en modo `enforce` que restringe rutas del sistema de archivos y ejecución de binarios dentro del contenedor API. |
 | `services/api/app/middleware.py` | `SecurityHeadersMiddleware`: HSTS, CSP estricto (sin `unsafe-inline`), `X-Frame-Options: DENY`, `Cache-Control: no-store` y `X-Request-ID`. |
@@ -40,8 +40,8 @@
 ### P3. ¿Por qué FIDO2/WebAuthn es resistente al phishing?
 **Respuesta:** Porque la llave privada nunca sale del autenticador del usuario y cada firma ECDSA P-256 está criptográficamente ligada al origen exacto (`rp_id = tralaleritosmigajeros.uk`) y a un reto aleatorio de un solo uso (*anti-replay*). En un sitio de phishing con otro dominio, el navegador ni siquiera libera la credencial. Además validamos `sign_count` monotónico para detectar clonación.
 
-### P4. ¿Por qué no guardan el JWT en `localStorage`?
-**Respuesta:** Porque `localStorage` es vulnerable a robo de sesión ante cualquier XSS. En nuestro portal (`portal.js`), el JWT vive exclusivamente en memoria RAM de la pestaña, está protegido por CSP estricto sin `unsafe-inline`, expira en 30 minutos y se revoca inmediatamente por `jti` en `POST /auth/logout`.
+### P4. ¿Por qué no guardan el JWT en `localStorage` y cómo manejan la expiración e IAM?
+**Respuesta:** Porque `localStorage` es vulnerable a robo de sesión ante cualquier XSS. En nuestro portal (`portal.js`), el JWT vive exclusivamente en memoria RAM de la pestaña, está protegido por CSP estricto sin `unsafe-inline`, tiene TTL máximo de 30 minutos, **expira implícitamente en el backend tras 2 minutos (120 s) de inactividad** (`SESSION_INACTIVITY_TIMEOUT_SECONDS=120`, sin contador visible ni manipulable en el cliente) y se revoca inmediatamente por `jti` en `POST /auth/logout`. Además, eliminamos cualquier cuenta `super_admin` por **Separación de Funciones Zero Trust**: el auto-registro público solo crea cuentas `paciente` y `admin_sec` gestiona cuentas/roles institucionales (`/auth/users`) sin acceso a expedientes ni PII (`403`).
 
 ### P5. ¿Qué ventaja da usar HashiCorp Vault con Transit AEAD + KV v2 en lugar de cifrar directamente en Python?
 **Respuesta:** Con **Transit AEAD** (Encryption-as-a-Service), la llave criptográfica maestra (`hospital-pii-key`) **jamás sale de Vault ni entra a la memoria de la API**. Además permite rotar llaves (`POST /vault/keys/rotate`, ej. versión `1 → 2`) manteniendo descifrables los tokens anteriores sin reescribir la base de datos ni exponer la clave.
@@ -53,7 +53,7 @@
 **Respuesta:** Porque `cloudflared` establece conexiones salientes cifradas hacia el borde de Cloudflare (`readyConnections: 4`), por lo que la VM **no expone ninguna IP pública ni puertos entrantes abiertos**, reduciendo drásticamente la superficie de ataque y evitando que alguien se salte el WAF conectándose directo por IP.
 
 ### P8. ¿Qué protecciones activaron en Cloudflare para `tralaleritosmigajeros.uk`?
-**Respuesta:** TLS Full (Strict) + TLS 1.3 + HSTS 1 año, 4 reglas WAF personalizadas (bloqueo de `/.env`, `/.git`, SQLi/XSS, métodos no permitidos y `User-Agent` vacío), Rate Limiting en `/auth/*` (`10 req / 10 s` por IP) y **Cloudflare Zero Trust Access (Email OTP)** protegiendo `siem.tralaleritosmigajeros.uk`. Todo verificado con `verify-domain-security.sh` (`PASS=14 | WARN=0 | FAIL=0`).
+**Respuesta:** TLS Full (Strict) + TLS 1.3 + HSTS 1 año, 4 reglas WAF personalizadas (bloqueo de `/.env`, `/.git`, SQLi/XSS, métodos no permitidos y `User-Agent` vacío), Rate Limiting en `/auth/*` (`10 req / 10 s` por IP) y **Cloudflare Zero Trust Access (Email OTP restringido a cuentas institucionales BUAP `@alumno.buap.mx` / `@correo.buap.mx`)** protegiendo `siem.tralaleritosmigajeros.uk`. Todo verificado con `verify-domain-security.sh` (`PASS=14 | WARN=0 | FAIL=0`).
 
 ### P9. ¿Por qué desactivaron `Bot Fight Mode` en Cloudflare Free?
 **Respuesta:** Porque en el plan Free intercepta clientes legítimos de API (`curl`, scripts de verificación y pruebas automatizadas) con un reto JS `403` sin permitir reglas WAF Skip. En su lugar aplicamos defensa en profundidad con las 4 reglas WAF, Rate Limiting en `/auth/` y las reglas de correlación del SIEM.
@@ -66,6 +66,6 @@
 ## 4. Tu Bloque en la Demo en Vivo (Minutos 2 a 7)
 
 1. Mostrar la puerta de autenticación obligatoria en `https://tralaleritosmigajeros.uk/` (sin sesión no se ve nada de la app).
-2. En **Registrar Cuenta**, pulsar **"Generar contraseña segura"** + icono de ojo, crear usuario y mostrar login con Argon2id / Passkey FIDO2.
+2. En **Registrar Cuenta**, mostrar que el registro público solo permite el rol `paciente`, pulsar **"Generar contraseña segura"** + icono de ojo, crear una cuenta paciente, luego iniciar con **`admin_sec`** (mostrar pestaña *6. Gestión de Cuentas* e IAM sin acceso clínico) y pasar a **`medico_demo`** (Argon2id / Passkey FIDO2).
 3. Mostrar en terminal la verificación en vivo de **Seccomp-BPF + AppArmor** (`./infra/scripts/verify-sandboxing-mc01.sh` → `Operation not permitted` en `fork`/`subprocess`/`mount` + `PASS=14`).
 4. Mostrar rápidamente una sonda bloqueada por **Cloudflare WAF** (`curl -I https://tralaleritosmigajeros.uk/.env` → `HTTP 403`).

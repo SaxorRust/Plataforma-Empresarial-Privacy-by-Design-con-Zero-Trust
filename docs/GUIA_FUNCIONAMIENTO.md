@@ -48,7 +48,7 @@ La aplicación implementa **doble barrera de protección** (en el frontend y en 
 | :--- | :--- | :--- |
 | **Contraseña (Argon2id)** | `POST /auth/register` → `POST /auth/login` | Contraseña mínima 12 chars (`Aa1!`), hash `Argon2id` (64 MiB, `t=3`, `p=2`), **Salt único** por usuario + **Pepper secreto** de aplicación (`ARGON2_PEPPER`) y verificación *dummy* anti-enumeración. |
 | **Passkey FIDO2 / WebAuthn** | Registro: `/auth/webauthn/register/{begin,complete}`<br>Login: `/auth/webauthn/login/{begin,complete}` | Autenticación *passwordless* por llave criptográfica asimétrica (ECDSA P-256) ligada al origen (`tralaleritosmigajeros.uk`), reto de un solo uso (anti-replay) y contador de firma monotónico (anti-clonación). |
-| **Sesión JWT Zero Trust** | `GET /auth/me` · `POST /auth/logout` | Algoritmo `HS256` (rechaza `alg: none`), expiración de 30 minutos, claims `sub`, `role`, `amr` (`["pwd"]` o `["webauthn","fido2"]`) y lista de revocación por `jti`. |
+| **Sesión JWT Zero Trust** | `GET /auth/me` · `POST /auth/logout` | Algoritmo `HS256` (rechaza `alg: none`), expiración máxima de 30 minutos, **timeout implícito en el backend de 2 minutos (120 s) por inactividad** (sin contador visible en el cliente), claims `sub`, `role`, `amr` (`["pwd"]` o `["webauthn","fido2"]`) y lista de revocación por `jti`. |
 | **Cloudflare Zero Trust Access** | Acceso a `https://siem.tralaleritosmigajeros.uk` | Autenticación perimetral por Email OTP en Cloudflare restringida a **cuentas institucionales BUAP** (`@alumno.buap.mx` / `@correo.buap.mx`) autorizadas del equipo SOC. |
 
 ---
@@ -81,12 +81,12 @@ Cada petición clínica o de ciclo de vida exige **dos cosas**: tu identidad aut
 
 ### Módulo B — Ciclo de Vida, Anonimización y Borrado Certificado (`MB-01` a `MB-04`)
 1. **Retención Automática TTL (`MB-01`):**
-   - Un planificador en segundo plano (`TTLBackgroundScheduler`, configurable en `TTL_SWEEP_INTERVAL_SECONDS`) y el endpoint `POST /lifecycle/ttl/sweep` detectan expedientes cuyo `ttl_expires_at` venció, sobrescriben sus campos, los purgan y eliminan tokens huérfanos en Vault.
+   - Un planificador en segundo plano (`TTLBackgroundScheduler` en `services/api/app/lifecycle/ttl_worker.py`, configurable en `TTL_SWEEP_INTERVAL_SECONDS`) y el endpoint `POST /lifecycle/ttl/sweep` detectan expedientes cuyo `ttl_expires_at` venció, sobrescriben sus campos, los purgan y eliminan tokens huérfanos en Vault.
 2. **Exportación Desidentificada (`MB-02`):**
-   - `POST /lifecycle/exports/anonymized` y `GET /lifecycle/exports/anonymized.csv` aplican **HIPAA Safe Harbor** (remoción de los 18 identificadores y tope `90+` en edades) y una retícula adaptativa para garantizar **$k$-anonimato** (al menos $k$ individuos indistinguibles por clase de equivalencia) y **$l$-diversidad** (al menos $l$ diagnósticos CIE-10 distintos por clase).
+   - `POST /lifecycle/exports/anonymized` y `GET /lifecycle/exports/anonymized.csv` (`services/api/app/lifecycle/anonymization.py`) aplican **HIPAA Safe Harbor** (remoción de los 18 identificadores y tope `90+` en edades) y una retícula adaptativa para garantizar **$k$-anonimato** (al menos $k$ individuos indistinguibles por clase de equivalencia) y **$l$-diversidad** (al menos $l$ diagnósticos CIE-10 distintos por clase).
    - Si el conjunto de datos no puede cumplir $(k, l)$ dentro del `suppression_limit`, responde `422` (**Fail-Closed**) en lugar de exportar datos reidentificables.
 3. **Derechos ARCO + NIST SP 800-88 + Certificados (`MB-03` y `MB-04`):**
-   - `POST /lifecycle/arco/erasure` ejecuta:
+   - `POST /lifecycle/arco/erasure` (`services/api/app/lifecycle/nist_sanitization.py`) ejecuta:
      - Sobrescritura multi-pasada en PostgreSQL (`NIST_800_88_CLEAR`: 2 pasadas; `NIST_800_88_PURGE`: 3 pasadas con datos aleatorios y ceros).
      - Limpieza de buffers sensibles en RAM (`secure_zero_buffer`).
      - Destrucción permanente de versiones y metadatos KV v2 en Vault (`CONFIRMED_NOT_FOUND`).
@@ -100,7 +100,7 @@ Cada petición clínica o de ciclo de vida exige **dos cosas**: tu identidad aut
 3. **Sanitización Regex en Ingesta (`MC-03`):**
    - Antes de guardar cualquier evento en SQLite, `services/siem/app/sanitizer.py` enmascara con `***` tarjetas bancarias (validadas por algoritmo de Luhn), CURP, NSS, contraseñas/secretos y tokens JWT tanto en el mensaje como en `STRUCTURED-DATA`.
 4. **Motor de Correlación Temporal (`MC-04`):**
-   - Evalúa ventanas deslizantes en tiempo real y dispara alertas visibles y reconocibles (`ACK`) en la Consola SOC (`:8080`):
+   - Evalúa ventanas deslizantes en tiempo real y dispara alertas visibles y reconocibles (`ACK`) en la Consola SOC (`:8080`, con soporte de zona horaria `America/Mexico_City` y selector de huso horario):
      - **`RULE-001` (`BRUTE_FORCE_LOGIN`, `HIGH`):** $\ge 5$ logins fallidos en 60 s.
      - **`RULE-002` (`MASS_RECORD_ACCESS`, `CRITICAL`):** $\ge 10$ consultas clínicas o $\ge 25$ expedientes accedidos en 60 s por un mismo actor.
      - **`RULE-003` (`REPEATED_POLICY_DENIAL`, `HIGH`):** $\ge 5$ denegaciones OPA por *Function Creep* en 120 s.
@@ -109,23 +109,23 @@ Cada petición clínica o de ciclo de vida exige **dos cosas**: tu identidad aut
 
 ## 5. Recorrido Práctico de Uso (Paso a Paso)
 
-1. **Crear cuentas institucionales:**
-   - Entra a `https://tralaleritosmigajeros.uk/` → pestaña **Registrar Cuenta**.
-   - Crea un usuario con rol `medico` (ej. `dr_garcia` con contraseña fuerte de 12+ caracteres) y opcionalmente registra tu **Passkey FIDO2** en la pestaña **1. Mi Sesión & Passkeys**.
-2. **Cargar pacientes segregados (como `medico`):**
+1. **Auto-registro público (`paciente`) y gestión IAM (`admin_sec`):**
+   - En `https://tralaleritosmigajeros.uk/` → pestaña **Registrar Cuenta**, el registro público (`POST /auth/register`) está restringido por mínimo privilegio al rol **`paciente`** (cualquier intento de registrar otro rol devuelve `HTTP 403` y dispara `AUTH_PRIVILEGE_ESCALATION_BLOCKED` en el SIEM).
+   - Para cuentas institucionales, inicia sesión con las cuentas precargadas de [CREDENCIALES_EQUIPO.md](CREDENCIALES_EQUIPO.md) (`admin_sec`, `medico_demo`, `enfermeria_demo`, `analista_demo`, `auditor_arco`) o aprovisiona nuevos usuarios institucionales desde **`admin_sec`** en la pestaña **6. Gestión de Cuentas** (`POST /auth/users`). Opcionalmente, registra tu **Passkey FIDO2** en **1. Mi Sesión & Passkeys**.
+2. **Cargar pacientes segregados (como `medico_demo`):**
    - Ve a **2. Clínica & Bóveda PII** → haz clic en **"+ Cargar Cohorte Clínica (6 Pacientes)"** o llena el formulario de alta segregada.
    - Verifica que en la tabla solo aparece el token opaco `pat_...` y usa **"Resolver PII (Vault)"** para comprobar la detokenización controlada.
    - Cambia en la barra superior `X-Purpose` a **`marketing_comercial`** y pulsa **"Consultar Expedientes"** → observarás el bloqueo `HTTP 403` de OPA previniendo *Function Creep*.
-3. **Comprobar Minimización y Anonimización (como `analista`):**
+3. **Comprobar Minimización y Anonimización (como `analista_demo`):**
    - Pulsa **"Cerrar Sesión (Revocar JWT)"** (la app se bloquea de nuevo en el login).
-   - Registra/ingresa con un usuario de rol `analista`. Verás que en **Clínica** las edades aparecen como rangos (`30-39`) y los CP como `72***`.
+   - Inicia sesión con `analista_demo` (rol `analista`). Verás que en **Clínica** las edades aparecen como rangos (`30-39`) y los CP como `72***`.
    - En **4. Safe Harbor & (k, l)** genera la exportación JSON/CSV con `k=2, l=2` (y prueba `k=10` para comprobar el rechazo Fail-Closed `422`).
 4. **Ejecutar Borrado ARCO NIST SP 800-88 (como `auditor_arco`):**
-   - Cierra sesión e ingresa con rol `auditor_arco`.
+   - Cierra sesión e inicia sesión con `auditor_arco` (rol `auditor_arco`).
    - En **5. ARCO, TTL & NIST 800-88**, pega un token `pat_...`, selecciona `NIST_800_88_PURGE` y ejecuta la sanitización.
    - En la tabla de certificados, pulsa **"Verificar SHA-256"** y descarga el certificado en **PDF** y **JSON**.
 5. **Monitorear Auditoría y Alertas en el SIEM:**
-   - Abre `https://siem.tralaleritosmigajeros.uk` (autenticado vía Cloudflare Access OTP con tu **cuenta institucional BUAP** `@alumno.buap.mx` / `@correo.buap.mx` autorizada) y observa todos los eventos RFC 5424 sanitizados y las alertas de correlación temporal.
+   - Abre `https://siem.tralaleritosmigajeros.uk` (autenticado vía Cloudflare Access OTP con tu **cuenta institucional BUAP** `@alumno.buap.mx` / `@correo.buap.mx` autorizada) y observa todos los eventos RFC 5424 sanitizados (con selector de zona horaria `America/Mexico_City` / UTC) y las alertas de correlación temporal.
 
 ---
 
@@ -139,6 +139,7 @@ docker compose up -d --build
 sudo ./infra/scripts/install-apparmor-profile.sh
 docker compose -f docker-compose.yml -f docker-compose.apparmor.yml up -d --build
 
-# Ejecutar suite completa de pruebas automatizadas (39 tests: Módulos A, B, C y OWASP Top 10)
+# Ejecutar suite completa de pruebas automatizadas (43 tests Pytest + 15 tests OPA)
 pytest -v
+opa test -v infra/opa/policies
 ```

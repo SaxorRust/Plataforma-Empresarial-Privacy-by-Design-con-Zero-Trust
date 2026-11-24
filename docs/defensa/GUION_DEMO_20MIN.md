@@ -32,11 +32,12 @@
 
 ---
 
-### Minuto 2:00 – 7:00 | Bloque Ubaldo — Identidad (`MA-01`), Vault (`MA-02`), Sandboxing (`MC-01`) y Cloudflare (`F5`)
-1. **Puerta de Autenticación Obligatoria (`02:00 – 03:30`):**
-   - Mostrar `https://tralaleritosmigajeros.uk/`: sin JWT válido, toda la aplicación está bloqueada.
-   - Ir a **Registrar Cuenta**, crear usuario `dr_demo` (rol `medico`), hacer clic en **"Generar contraseña segura"** (16 caracteres con Web Crypto API), usar el botón de **visualizar/ocultar contraseña** y crear la cuenta.
-   - Mostrar en **1. Mi Sesión & Passkeys** los claims del JWT (`amr`, `role`) y (si hay autenticador biométrico/PIN en el equipo) registrar/demostrar **Passkey FIDO2/WebAuthn**.
+### Minuto 2:00 – 7:00 | Bloque Ubaldo — Identidad (`MA-01`), IAM Zero Trust, Sandboxing (`MC-01`) y Cloudflare (`F5`)
+1. **Puerta de Autenticación Obligatoria, Auto-registro Mínimo Privilegio e IAM (`02:00 – 03:30`):**
+   - Mostrar `https://tralaleritosmigajeros.uk/`: sin JWT válido, toda la aplicación está bloqueada (`#auth-gate`).
+   - En **Registrar Cuenta**, destacar que el registro público solo permite el rol **`paciente`** (mínimo privilegio OWASP A01): pulsar **"Generar contraseña segura"** (16 caracteres con Web Crypto API), usar el botón de **visualizar/ocultar contraseña** y crear un paciente de prueba (ej. `pac_demo_vivo`).
+   - Cerrar sesión e ingresar con **`admin_sec`** (ver `docs/CREDENCIALES_EQUIPO.md`) para mostrar brevemente la pestaña **6. Gestión de Cuentas** (aprovisionamiento IAM de roles institucionales sin cuenta `super_admin`, y bloqueo `403` si `admin_sec` intenta leer expedientes clínicos) y mencionar el **timeout implícito de 2 minutos por inactividad** en el backend.
+   - Cerrar sesión e iniciar con **`medico_demo`** (o demostrar **Passkey FIDO2/WebAuthn** en *1. Mi Sesión & Passkeys* si hay autenticador biométrico/PIN disponible).
 2. **Confinamiento Seccomp-BPF + AppArmor (`03:30 – 05:30`):**
    - En la terminal de la VM ejecutar:
      ```bash
@@ -54,28 +55,28 @@
 
 ### Minuto 7:00 – 13:00 | Bloque Jezreel — Segregación (`MA-02`), OPA (`MA-03`), Minimización (`MA-04`) y Ciclo de Vida (`MB-01` a `MB-04`)
 1. **Alta Segregada + Detokenización Vault (`07:00 – 08:30`):**
-   - Con la sesión de `dr_demo` (`medico`) en **2. Clínica & Bóveda PII**, hacer clic en **"+ Cargar Cohorte Clínica (6 Pacientes)"**.
+   - Con la sesión activa de **`medico_demo`** (`medico`) en **2. Clínica & Bóveda PII**, hacer clic en **"+ Cargar Cohorte Clínica (6 Pacientes)"**.
    - Señalar que la tabla clínica solo muestra tokens opacos (`pat_...`) sin nombres ni CURP.
-   - Pulsar **"Resolver PII (Vault)"** en un registro para demostrar la detokenización auditada vía Vault Transit AEAD + KV v2.
+   - Pulsar **"Resolver PII (Vault)"** en un registro para demostrar la detokenización auditada vía Vault Transit AEAD + KV v2 (exclusiva del rol `medico`).
 2. **Prevención de *Function Creep* con OPA (`08:30 – 09:30`):**
    - En la barra superior cambiar `X-Purpose` a **`marketing_comercial`** y pulsar **"Consultar Expedientes"** → mostrar **`HTTP 403 Forbidden`** devuelto por OPA (`hospital_abac.rego`) en modo Fail-Closed.
 3. **Minimización y Exportación Safe Harbor + $(k, l)$ (`09:30 – 11:00`):**
    - Pulsar **"Cerrar Sesión (Revocar JWT)"** (mostrar que la app regresa a `#auth-gate`).
-   - Registrar/ingresar con `ana_demo` (rol `analista`).
+   - Iniciar sesión con **`analista_demo`** (rol `analista`, credenciales en `docs/CREDENCIALES_EQUIPO.md`).
    - En **2. Clínica**, mostrar la **minimización cualitativa y cuantitativa**: edades en rangos (`30-39`, `90+`), CP generalizado (`72***`), cero tokens ni IDs.
    - Ir a **4. Safe Harbor & (k, l)** → exportar con `k=2, l=2` (éxito `200 OK` + descarga CSV) y luego probar `k=10` → demostrar rechazo **Fail-Closed `422`**.
 4. **Derechos ARCO + NIST SP 800-88 + Certificado PDF SHA-256 (`11:00 – 13:00`):**
-   - Cerrar sesión e ingresar con `aud_demo` (rol `auditor_arco`).
+   - Cerrar sesión e iniciar sesión con **`auditor_arco`** (rol `auditor_arco`).
    - En **5. ARCO, TTL & NIST 800-88**, copiar un token `pat_...`, seleccionar **`NIST_800_88_PURGE`** y ejecutar la sanitización.
-   - Mostrar en la respuesta: 3 pasadas en PostgreSQL, `memory_buffer_zeroed: true`, `vault_purge_status: CONFIRMED_NOT_FOUND`.
+   - Mostrar en la respuesta: 3 pasadas en PostgreSQL, `memory_buffers_zeroed >= 1`, `vault_verification: CONFIRMED_NOT_FOUND`.
    - En la tabla de certificados, pulsar **"Verificar SHA-256"** (`valid: true`) y descargar/abrir el **Certificado PDF**.
 
 ---
 
 ### Minuto 13:00 – 18:00 | Bloque Samuel — Syslog RFC 5424 (`MC-02`), Sanitización (`MC-03`) y Correlación SIEM (`MC-04`)
 1. **Protección Zero Trust de la Consola SOC (`13:00 – 14:00`):**
-   - Mostrar en ventana de incógnito que `https://siem.tralaleritosmigajeros.uk` redirige a **Cloudflare Zero Trust Access (Email OTP)**.
-   - Cambiar a la pestaña ya autenticada de la Consola SOC.
+   - Mostrar en ventana de incógnito que `https://siem.tralaleritosmigajeros.uk` redirige a **Cloudflare Zero Trust Access (Email OTP restringido a cuentas institucionales BUAP)**.
+   - Cambiar a la pestaña ya autenticada de la Consola SOC y destacar la hora local **`America/Mexico_City`** (con selector de zona horaria integrado).
 2. **Auditoría RFC 5424 en Vivo (`14:00 – 15:00`):**
    - Recargar la tabla de eventos y señalar las tramas reales recién generadas por Ubaldo y Jezreel (`AUTH_LOGIN_SUCCESS`, `CLINICAL_PII_DETOKENIZE`, `OPA_POLICY_DENIED`, `LIFECYCLE_ARCO_ERASURE`).
 3. **Sanitización Regex Pre-Persistencia y Correlación Temporal (`15:00 – 18:00`):**
@@ -91,7 +92,7 @@
 ---
 
 ### Minuto 18:00 – 20:00 | Cierre, DevSecOps y Transición a Q&A *(Todos)*
-- Mostrar la pestaña **GitHub Actions** con los **9/9 checks en verde** (`Ruff`, `Pytest`, `OPA`, `ShellCheck`, `Bandit`, `Semgrep`, `Gitleaks`, `Trivy`, `CodeQL`, `pip-audit`).
+- Mostrar la pestaña **GitHub Actions** con los **9/9 checks en verde** (`Ruff`, `43/43 Pytest + 82% Cov`, `15/15 OPA`, `ShellCheck`, `Bandit`, `Semgrep`, `Gitleaks`, `Trivy`, `CodeQL`, `pip-audit`).
 - Resumir la defensa en profundidad lograda y abrir sesión de preguntas del jurado.
 
 ---

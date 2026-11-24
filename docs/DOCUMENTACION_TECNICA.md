@@ -35,12 +35,12 @@ El presente documento describe el diseño, implementación y validación de una 
 
 La solución integra de manera nativa:
 
-1. **Identidad fuerte y verificación continua (`MA-01`):** Autenticación resistente al phishing mediante **FIDO2/WebAuthn (Passkeys)** y respaldo con contraseñas robustas **Argon2id** (*salt* único por usuario + *pepper* secreto HMAC-SHA256), más una puerta de autenticación obligatoria en el portal web con visor y generador criptográfico de contraseñas.
+1. **Identidad fuerte y verificación continua (`MA-01`):** Autenticación resistente al phishing mediante **FIDO2/WebAuthn (Passkeys)** y respaldo con contraseñas robustas **Argon2id** (*salt* único por usuario + *pepper* secreto HMAC-SHA256), puerta de autenticación obligatoria con visor y generador criptográfico, sesiones JWT con timeout implícito de 2 minutos en backend y gestión IAM sin cuenta `super_admin`.
 2. **Segregación física y criptográfica de PII (`MA-02`):** Aislamiento de identificadores directos en **HashiCorp Vault** (cifrado autenticado **Transit AEAD** + **KV v2**), manteniendo en **PostgreSQL 16** exclusivamente tokens opacos aleatorios (`pat_<32 hex>`) y atributos clínicos.
 3. **Autorización contextual ABAC/OPA (`MA-03` y `MA-04`):** Motor **Open Policy Agent (OPA)** en modo *Fail-Closed* que valida identidad, rol y propósito declarado (`X-Purpose`) en cada operación, aplicando minimización cuantitativa (filtrado de columnas) y cualitativa (enmascaramiento y generalización).
 4. **Ciclo de vida y cumplimiento normativo (`MB-01` a `MB-04`):** Purga automática por retención temporal (**TTL**), exportación estadística bajo **HIPAA Safe Harbor** (18 identificadores) con garantía matemática de **$k$-anonimato** y **$l$-diversidad**, y ejecución de **Derechos ARCO** con sanitización **NIST SP 800-88** (`CLEAR`/`PURGE`), limpieza de memoria RAM y emisión de certificados JSON/PDF sellados con **SHA-256**.
-5. **Confinamiento del sistema y visibilidad SOC (`MC-01` a `MC-04`):** Perfiles personalizados **Seccomp-BPF** (default-deny `EPERM`) y **AppArmor** (`enforce`), centralización de auditoría en formato **Syslog RFC 5424** sobre UDP/TCP, sanitización Regex previa a persistencia (tarjetas Luhn, CURP, NSS, contraseñas y JWT) y un **SIEM en Python** con 3 reglas de correlación temporal en tiempo real.
-6. **Exposición segura sin puertos públicos (`F5-03` y `F5-04`):** Publicación a través de **Cloudflare Tunnel (`cloudflared`)** hacia `tralaleritosmigajeros.uk`, reforzada con TLS 1.3 Strict, 4 reglas WAF personalizadas, Rate Limiting en `/auth/` y **Cloudflare Zero Trust Access (Email OTP)** protegiendo `siem.tralaleritosmigajeros.uk`.
+5. **Confinamiento del sistema y visibilidad SOC (`MC-01` a `MC-04`):** Perfiles personalizados **Seccomp-BPF** (*default-deny* `EPERM`) y **AppArmor** (`enforce`), centralización de auditoría en formato **Syslog RFC 5424** sobre UDP/TCP, sanitización Regex previa a persistencia (tarjetas Luhn, CURP, NSS, contraseñas y JWT) y un **SIEM en Python** con 3 reglas de correlación temporal en tiempo real y soporte horario `America/Mexico_City`.
+6. **Exposición segura sin puertos públicos (`F5-03` y `F5-04`):** Publicación a través de **Cloudflare Tunnel (`cloudflared`)** hacia `tralaleritosmigajeros.uk`, reforzada con TLS 1.3 Strict, 4 reglas WAF personalizadas, Rate Limiting en `/auth/` y **Cloudflare Zero Trust Access (Email OTP BUAP)** protegiendo `siem.tralaleritosmigajeros.uk`.
 
 ---
 
@@ -62,17 +62,38 @@ flowchart LR
     API -->|"audit_net (internal)\nSyslog RFC 5424 UDP/TCP 5514"| SIEM
 ```
 
-### 2.2 Inventario de Servicios y Controles de Endurecimiento
+### 2.2 Flujo de Ciclo de Vida Privacy-by-Design (Segregación, ABAC, ARCO y SIEM)
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente (JWT + X-Purpose)
+    participant API as zt-hospital-api (FastAPI)
+    participant OPA as zt-opa (ABAC Fail-Closed)
+    participant V as zt-vault (Transit + KV v2)
+    participant PG as zt-postgres (Clínica)
+    participant SIEM as zt-siem-collector (RFC 5424)
+
+    C->>API: POST /clinical/records/segregated (PII + Clínica)
+    API->>OPA: Evalúa (role, X-Purpose, action)
+    OPA-->>API: allow=true + allowed_fields
+    API->>V: Cifra PII (Transit AEAD) + guarda KV v2
+    V-->>API: token opaco pat_<32 hex>
+    API->>PG: INSERT clinical.medical_records (solo pat_... + clínica)
+    API-->>SIEM: Syslog RFC 5424 (sanitización Regex pre-SQLite)
+    Note over API,PG: En borrado ARCO (NIST 800-88): 3 pasadas PG + zeroing RAM + purga Vault + Certificado SHA-256
+```
+
+### 2.3 Inventario de Servicios y Controles de Endurecimiento
 
 | Contenedor | Tecnología | Redes Conectadas | Exposición Host | Controles de Endurecimiento |
 | :--- | :--- | :--- | :--- | :--- |
 | **`zt-hospital-api`** | Python 3.11 + FastAPI | `edge_net`, `data_net`, `vault_net`, `policy_net`, `audit_net` | `127.0.0.1:8000` | Usuario no-root (`appuser`), `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges:true`, **Seccomp-BPF** (`api-seccomp.json`), **AppArmor** (`zt-hospital-api`), `tmpfs` limitado en `/tmp`. |
-| **`zt-postgres`** | PostgreSQL 16 Alpine | `data_net` (`internal`) | Ninguna | Sin puertos al exterior; esquemas segregados (`identity`, `clinical`, `compliance`); sin PII directa en tablas clínicas. |
+| **`zt-postgres`** | PostgreSQL 16 Alpine | `data_net` (`internal`) | Ninguna | Sin puertos al exterior; esquemas segregados (`auth_identity`, `clinical`, `compliance`); sin PII directa en tablas clínicas. |
 | **`zt-vault`** | HashiCorp Vault 1.17 | `vault_net` (`internal`) | Ninguna | Sin puertos al exterior; motor `Transit` (AEAD AES-256-GCM96 con rotación de llaves) + `KV v2` para almacenar PII cifrada. |
-| **`zt-opa`** | Open Policy Agent | `policy_net` (`internal`) | Ninguna | Sin puertos al exterior; política `hospital_abac.rego` montada en modo solo lectura (`:ro`). |
-| **`zt-siem-collector`** | Python 3.11 + FastAPI + SQLite | `edge_net`, `audit_net` (`internal`) | `127.0.0.1:8080` | Ingesta Syslog RFC 5424 (`5514/udp` y `5514/tcp`) solo en `audit_net`; consola SOC protegida por **Cloudflare Zero Trust Access**. |
+| **`zt-opa`** | Open Policy Agent | `policy_net` (`internal`) | Ninguna | Sin puertos al exterior; política `hospital_abac.rego` montada en modo solo lectura (`:ro`) con recarga controlada (`--watch`). |
+| **`zt-siem-collector`** | Python 3.11 + FastAPI + SQLite | `edge_net`, `audit_net` (`internal`) | `127.0.0.1:8080` | Ingesta Syslog RFC 5424 (`5514/udp` y `5514/tcp`) solo en `audit_net`; consola SOC (`America/Mexico_City`) protegida por **Cloudflare Zero Trust Access**. |
 
-### 2.3 Defensa en Profundidad en Cabeceras HTTP
+### 2.4 Defensa en Profundidad en Cabeceras HTTP
 
 El middleware `SecurityHeadersMiddleware` (`services/api/app/middleware.py`) inyecta en todas las respuestas cabeceras Zero Trust:
 
@@ -126,7 +147,7 @@ Implementada en `services/api/app/policy/minimization.py` a partir de la lista `
 | **`enfermeria`** | `atencion_medica` | Solo 4 campos: `record_id`, `opaque_patient_token`, `department`, `diagnosis_summary`. | Token enmascarado (`pat_21a0...ae72`); oculta edad, CP y código CIE-10 exacto. |
 | **`analista`** | `investigacion_estadistica` | `age_range`, `zip_generalized`, `gender`, `diagnosis_cie10`, `department`. | Generalización: edad en rangos decenales (`30-39`, tope `90+`) y CP truncado (`72***`); sin `record_id` ni tokens. |
 | **`auditor_arco`** | `ejercicio_arco` | Solo metadatos de cumplimiento (`record_id`, `opaque_patient_token`, `purpose_scope`, `is_sanitized`, `ttl_expires_at`). | Cero visibilidad de diagnósticos ni resúmenes clínicos. |
-| **`admin_sec`** | `mantenimiento_ttl` | Ninguna columna clínica (`403` en `/clinical/records`). | Separación estricta de funciones SecOps vs. datos clínicos. |
+| **`admin_sec`** | `mantenimiento_ttl` | Ninguna columna clínica (`403` en `/clinical/records`). | Separación estricta de funciones SecOps/IAM vs. datos clínicos. |
 | **`paciente`** | `acceso_titular` | Solo sus propios registros (`resource_owner_match == true`). | Oculta identificadores internos y registros de terceros. |
 
 ---
@@ -135,14 +156,14 @@ Implementada en `services/api/app/policy/minimization.py` a partir de la lista `
 
 ### 4.1 Retención Temporal Automatizada (`MB-01`)
 
-Implementada en `services/api/app/lifecycle/ttl_scheduler.py` y `services/api/app/routers/lifecycle.py`:
+Implementada en `services/api/app/lifecycle/ttl_worker.py` y `services/api/app/routers/lifecycle.py`:
 
 - Cada expediente almacena una marca de expiración `ttl_expires_at`.
 - Un planificador asíncrono (`TTLBackgroundScheduler`) arrancado en el ciclo `lifespan` de FastAPI —y también invocable bajo demanda en `POST /lifecycle/ttl/sweep` por `auditor_arco` o `admin_sec`— identifica registros vencidos, sobrescribe sus campos sensibles en PostgreSQL, los elimina y purga el token huérfano correspondiente en Vault KV v2.
 
 ### 4.2 Exportación Desidentificada: Safe Harbor + $(k, l)$ (`MB-02`)
 
-Implementada en `services/api/app/lifecycle/anonymizer.py`:
+Implementada en `services/api/app/lifecycle/anonymization.py`:
 
 - **HIPAA Safe Harbor:** Remueve los 18 identificadores directos/indirectos (nombres, fechas exactas, CP completo, teléfonos, correos, CURP, NSS, identificadores de expediente) y aplica tope superior `90+` para edades $\ge 90$ años.
 - **$k$-anonimato y $l$-diversidad con retícula adaptativa:** Agrupa cuasi-identificadores (`age_range`, `zip_generalized`, `gender`) en clases de equivalencia, buscando automáticamente el nivel mínimo de generalización donde cada clase tenga al menos **$k$ registros indistinguibles** y al menos **$l$ diagnósticos CIE-10 distintos**.
@@ -150,7 +171,7 @@ Implementada en `services/api/app/lifecycle/anonymizer.py`:
 
 ### 4.3 Derechos ARCO y Sanitización NIST SP 800-88 (`MB-03`)
 
-Implementada en `services/api/app/lifecycle/erasure.py`:
+Implementada en `services/api/app/lifecycle/nist_sanitization.py`:
 
 Al invocar `POST /lifecycle/arco/erasure` (rol `auditor_arco`, `X-Purpose: ejercicio_arco`), la plataforma ejecuta una secuencia determinista de destrucción irreversible:
 
@@ -164,21 +185,41 @@ Al invocar `POST /lifecycle/arco/erasure` (rol `auditor_arco`, `X-Purpose: ejerc
 
 Implementada en `services/api/app/lifecycle/certificates.py`:
 
-- Tras cada borrado ARCO exitoso, se persiste un certificado inmutable en `compliance.sanitization_certificates` con un digest **`SHA-256`** calculado sobre la representación canónica JSON del evento (ID de certificado, token purgado, método NIST, número de pasadas, verificación de Vault, actor y marca temporal UTC).
-- Descargable en formato **JSON** (`/lifecycle/certificates/{id}.json`) y **PDF** profesional generado con `reportlab` (`/lifecycle/certificates/{id}.pdf`).
+- Tras cada borrado ARCO exitoso, se persiste un certificado inmutable en `compliance.sanitization_certificates` con un digest **`SHA-256`** (64 caracteres hexadecimales) calculado sobre la serialización canónica JSON (`sort_keys=True`, `separators=(',', ':')`, UTF-8) del objeto `certificate`.
+- Descargable en formato **JSON** (`/lifecycle/certificates/{id}.json`) y **PDF oficial** generado con `reportlab` (`/lifecycle/certificates/{id}.pdf`), libre de identificadores directos.
 - Verificación de integridad en tiempo constante (`/lifecycle/certificates/{id}/verify`) mediante `hmac.compare_digest`, capaz de detectar cualquier alteración (*tampering*) en base de datos.
+
+Ejemplo íntegro y criptográficamente verificable del certificado JSON emitido por `render_certificate_json_document` (el hash `SHA-256` corresponde al objeto `certificate` canónico):
 
 ```json
 {
   "certificate_id": "c5394a18-300e-4f4b-a106-f87eb9db6543",
-  "standard": "NIST SP 800-88 Rev. 1",
-  "method": "NIST_800_88_PURGE",
-  "overwrite_passes": 3,
-  "memory_buffer_zeroed": true,
-  "vault_purge_status": "CONFIRMED_NOT_FOUND",
-  "records_sanitized": 1,
-  "sha256_integrity_hash": "351b79123356...",
-  "verified": true
+  "integrity": {
+    "algorithm": "SHA-256",
+    "sha256_hash": "a48cfbe2324a07bc244c86492e58dddd9b019aa511161d4658837fcade0da5ee",
+    "canonicalization": "JSON sort_keys=True, separators=(',', ':'), UTF-8"
+  },
+  "certificate": {
+    "certificate_id": "c5394a18-300e-4f4b-a106-f87eb9db6543",
+    "standard": "NIST SP 800-88 Rev. 1",
+    "method": "NIST_800_88_PURGE",
+    "arco_right": "Cancelación / Supresión (ARCO)",
+    "arco_request_folio": "ARCO-2026-0042",
+    "reason": "Solicitud de cancelación definitiva ejercida por el titular (verificación E2E Módulo B)",
+    "opaque_patient_token": "pat_21a024036c5e97f3638fe340eb0bae72",
+    "sanitized_record_ids": [
+      "8f102155-8762-4a16-8e67-7b3dd44961e8"
+    ],
+    "records_sanitized_count": 1,
+    "overwrite_passes": 3,
+    "memory_buffers_zeroed": 1,
+    "vault_purged": true,
+    "vault_verification": "CONFIRMED_NOT_FOUND",
+    "requested_by": "auditor_arco",
+    "requested_by_role": "auditor_arco",
+    "executed_at": "2026-11-22T18:45:12.418204+00:00",
+    "organization": "Hospital Privacy-by-Design Zero Trust — BUAP FCC"
+  }
 }
 ```
 
@@ -219,7 +260,7 @@ Antes de insertar cualquier evento en la base SQLite del SIEM, el pipeline aplic
 
 Implementado en `services/siem/app/correlator.py` y `services/siem/app/dashboard.py`:
 
-El motor evalúa ventanas deslizantes en memoria en tiempo real y emite alertas consultables y reconocibles (`POST /api/v1/alerts/{id}/ack`) desde la consola SOC (`https://siem.tralaleritosmigajeros.uk`):
+El motor evalúa ventanas deslizantes en memoria en tiempo real y emite alertas consultables y reconocibles (`POST /api/v1/alerts/{id}/ack`) desde la consola SOC (`https://siem.tralaleritosmigajeros.uk`), la cual presenta marcas temporales en **`America/Mexico_City`** con selector interactivo de zona horaria (preservando UTC en almacenamiento):
 
 | ID Regla | Código de Alerta | Severidad | Condición de Disparo | Propósito Defensivo |
 | :--- | :--- | :---: | :--- | :--- |
@@ -233,13 +274,13 @@ El motor evalúa ventanas deslizantes en memoria en tiempo real y emite alertas 
 
 ### 6.1 Suite de Pruebas Automatizadas y Pipeline CI/CD (`F5-01` y `F5-02`)
 
-El repositorio cuenta con **38+ pruebas automatizadas en `pytest`** distribuidas en `tests/` (`test_auth_ma01.py`, `test_vault_ma02.py`, `test_privacy_module_a.py`, `test_lifecycle_module_b.py`, `test_sandboxing_mc01.py`, `test_siem_module_c.py`, `test_owasp_top10_security.py`, `test_security_headers.py`, `test_health.py`), alcanzando **82% de cobertura global y >90% en el SIEM**.
+El repositorio cuenta con **43 pruebas automatizadas en `pytest`** distribuidas en `tests/` (`test_auth_ma01.py`, `test_vault_ma02.py`, `test_privacy_module_a.py`, `test_lifecycle_module_b.py`, `test_sandboxing_mc01.py`, `test_siem_module_c.py`, `test_owasp_top10_security.py`, `test_security_headers.py`, `test_health.py`), alcanzando **82% de cobertura global y >90% en el SIEM**.
 
 El pipeline de GitHub Actions (`.github/workflows/ci.yml` y `.github/workflows/security-owasp.yml`) ejecuta **9 controles automatizados en verde**:
 
-1. **Ruff** (calidad de código y formato Python).
-2. **Pytest + Coverage** (pruebas funcionales, seguridad y OWASP Top 10 A01–A10).
-3. **OPA Check (`--strict`) y `opa test`** (13/13 pruebas unitarias de `hospital_abac.rego`).
+1. **Ruff** (calidad de código, complejidad McCabe y formato Python).
+2. **Pytest + Coverage** (**43/43 pruebas en verde**, incluyendo suite OWASP Top 10 A01–A10).
+3. **OPA Check (`--strict`) y `opa test`** (**15/15 pruebas unitarias** de `hospital_abac.rego`).
 4. **ShellCheck** sobre todos los scripts de infraestructura (`infra/scripts/*.sh`).
 5. **Validación de Sandboxing** (`apparmor_parser` + prueba negativa Docker con Seccomp-BPF).
 6. **pip-audit** (0 CVEs conocidos tras remediación de dependencias).
@@ -260,20 +301,36 @@ La publicación hacia `tralaleritosmigajeros.uk` se realiza mediante **`cloudfla
 
 ## 7. Evidencias de Verificación en Producción y Máquina Virtual
 
-Todas las verificaciones end-to-end fueron ejecutadas sobre el despliegue real en Ubuntu Server 26.04.1 LTS y el dominio público `https://tralaleritosmigajeros.uk`, quedando archivadas en `docs/evidencias/`:
+Todas las verificaciones end-to-end fueron ejecutadas sobre el despliegue real en Ubuntu Server 26.04.1 LTS, GitHub Actions CI y el dominio público `https://tralaleritosmigajeros.uk`, quedando archivadas en `docs/evidencias/`:
 
-### 7.1 Resumen de Ejecuciones Automatizadas E2E
+### 7.1 Resumen de Ejecuciones Automatizadas E2E y CI
 
-| Script de Verificación | Alcance Validado | Resultado | Archivo de Evidencia |
+| Script / Suite de Verificación | Alcance Validado | Resultado | Archivo de Evidencia |
 | :--- | :--- | :---: | :--- |
 | `verify-domain-security.sh` | HTTPS, `CF-Ray`, cabeceras Zero Trust, TLS $\ge$ 1.2, WAF (`/.env` y SQLi `403`) y Access OTP en `siem.` | **PASS=14 · WARN=0 · FAIL=0** | `docs/evidencias/evidenciaTestbashVM.txt` |
 | `verify-sandboxing-mc01.sh` | `ReadonlyRootfs`, `CapDrop=ALL`, `no-new-privileges`, Seccomp (`fork`, `subprocess`, `mount`, `unshare`, `ptrace`, `AF_PACKET`, `chmod` → `EPERM`) y AppArmor `enforce` | **PASS=14 · WARN=0 · FAIL=0** | `docs/evidencias/evidenciainfra.txt` |
 | `verify-ma01-ma02.sh` | Aprovisionamiento IAM, login Argon2id+JWT, WebAuthn begin, Vault Transit+KV v2 (`pat_...`), RBAC `403` analista/SecOps, rotación llave `1→2`, purga KV v2 y revocación logout (`401`) | **PASS=14 · FAIL=0** | `docs/evidencias/evidenciainfra.txt` |
 | `verify-module-a.sh` | OPA operativo, alta segregada Vault+PG, bloqueos *Function Creep* (`403`) y minimización en `enfermeria`, `analista` y `auditor_arco` | **PASS=9 · FAIL=0** | `docs/evidencias/evidenciasROLprivacidad.txt` |
 | `verify-module-b.sh` | Scheduler TTL activo, barrido con purga en Vault, exportación Safe Harbor + $(k=3, l=3)$ JSON/CSV, borrado ARCO NIST 800-88 `PURGE` y certificados JSON/PDF SHA-256 | **PASS=8 · FAIL=0** | `docs/evidencias/evidenciasROLprivacidad.txt` |
-| `verify-siem-module-c.sh` | Ingesta Syslog RFC 5424 UDP/TCP, sanitización Regex en SQLite y disparo de alertas `RULE-001`, `RULE-002` y `RULE-003` | **PASS (38/38)** | `tests/test_siem_module_c.py` |
+| `verify-siem-module-c.sh` + `pytest` | Ingesta Syslog RFC 5424 UDP/TCP, sanitización Regex en SQLite y disparo + ACK de alertas `RULE-001`, `RULE-002` y `RULE-003` | **PASS (43/43 Pytest · 15/15 OPA)** | `tests/test_siem_module_c.py` · GitHub Actions CI |
 
-### 7.2 Evidencias Visuales de Endurecimiento en Cloudflare
+### 7.2 Extracto de Salidas Verificadas (Módulos A, B y C)
+
+```text
+[MC-01 Sandboxing — docs/evidencias/evidenciainfra.txt]
+[PASS] ReadonlyRootfs=true | CapDrop=[ALL] | no-new-privileges:true | AppArmor=zt-hospital-api
+[PASS] Seccomp bloquea os.fork(), subprocess.run('/bin/sh'), mount(), unshare(), ptrace(), AF_PACKET, chmod() -> Errno 1: Operation not permitted
+[PASS] API FastAPI operativa bajo confinamiento estricto -> Resumen MC-01: PASS=14 | WARN=0 | FAIL=0
+
+[Módulo A & B — docs/evidencias/evidenciasROLprivacidad.txt]
+[PASS] POST /clinical/records/segregated aisló PII en Vault (pat_21a024036c5e97f3638fe340eb0bae72)
+[PASS] Function Creep bloqueado (HTTP 403 sin X-Purpose, marketing, singling-out analista y admin_sec)
+[PASS] POST /lifecycle/exports/anonymized verificó Safe Harbor (18 IDs, 90+) + k=3, l=3
+[PASS] POST /lifecycle/arco/erasure ejecutó NIST SP 800-88 PURGE + PDF (3924 bytes) + verificación SHA-256 válida
+Resumen Módulo A: PASS=9 | FAIL=0  ·  Resumen Módulo B: PASS=8 | FAIL=0
+```
+
+### 7.3 Evidencias Visuales de Endurecimiento en Cloudflare
 
 Las siguientes capturas documentan la transición desde tráfico sin reglas personalizadas hasta la activación efectiva del WAF y Rate Limiting en `tralaleritosmigajeros.uk`:
 
@@ -288,10 +345,10 @@ Las siguientes capturas documentan la transición desde tráfico sin reglas pers
 
 | Bloque de Evaluación (Rúbrica ICSA 252) | Peso Rúbrica | Requisitos Cubiertos | Estado |
 | :--- | :---: | :--- | :---: |
-| **Módulo A:** Gobernanza, Minimización y Control de Acceso | 20% | `MA-01` (WebAuthn + Argon2id/Pepper), `MA-02` (Vault Transit+KV v2), `MA-03` (OPA Fail-Closed), `MA-04` (Minimización cuantitativa/cualitativa) | **100% Completado** |
+| **Módulo A:** Gobernanza, Minimización y Control de Acceso | 20% | `MA-01` (WebAuthn + Argon2id/Pepper + IAM sin `super_admin` + timeout 2m), `MA-02` (Vault Transit+KV v2), `MA-03` (OPA Fail-Closed 15/15), `MA-04` (Minimización cuantitativa/cualitativa) | **100% Completado** |
 | **Módulo B:** Ciclo de Vida, Desidentificación y Borrado Certificado | 25% | `MB-01` (TTL automático), `MB-02` (Safe Harbor + $k$-anonimato/$l$-diversidad), `MB-03` (ARCO + NIST SP 800-88 + limpieza RAM), `MB-04` (Certificados JSON/PDF SHA-256) | **100% Completado** |
-| **Módulo C:** Sandboxing de Aplicación y Auditoría SIEM | 25% | `MC-01` (Seccomp-BPF + AppArmor), `MC-02` (Syslog RFC 5424), `MC-03` (Sanitización Regex pre-persistencia), `MC-04` (3 reglas de correlación temporal + SOC) | **100% Completado** |
-| **Documentación, Evidencias y Defensa Técnica** | 30% | Reporte técnico MD + PDF, guías de defensa por rol (Jezreel, Ubaldo, Samuel) y guion de demo en vivo de 20 minutos | **100% Completado** |
+| **Módulo C:** Sandboxing de Aplicación y Auditoría SIEM | 25% | `MC-01` (Seccomp-BPF + AppArmor), `MC-02` (Syslog RFC 5424), `MC-03` (Sanitización Regex pre-persistencia), `MC-04` (3 reglas de correlación temporal + SOC `America/Mexico_City`) | **100% Completado** |
+| **Documentación, Evidencias y Defensa Técnica** | 30% | Reporte técnico MD + PDF con 2 diagramas, certificado NIST completo, evidencias E2E + 4 capturas Cloudflare, guías de defensa por rol y guion de demo de 20 min | **100% Completado** |
 
 ### Conclusiones
 

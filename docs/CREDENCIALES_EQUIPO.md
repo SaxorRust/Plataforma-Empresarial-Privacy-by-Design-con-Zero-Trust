@@ -42,4 +42,6 @@ Al arrancar, la API ejecutará automáticamente la limpieza de cualquier cuenta 
 2. En la pestaña **Iniciar Sesión**, ingresa cualquiera de los 6 usuarios y contraseñas de la tabla.
 3. Opcionalmente, cada integrante puede registrar su propia **Passkey FIDO2/WebAuthn** en *1. Mi Sesión & Passkeys*.
 
-> Para desactivar la precarga automática en un entorno productivo estricto, define `SEED_DEFAULT_ACCOUNTS=false` en tu archivo `.env`.
+> **Recomendación de seguridad para despliegues públicos en Internet:**
+> Las contraseñas de esta tabla están pensadas para **despliegue local, pruebas automatizadas y evaluación académica**. En un entorno productivo expuesto públicamente (como `https://tralaleritosmigajeros.uk`), se recomienda rotar el sufijo de precarga (`SEED_ACCOUNTS_SUFFIX`) en el archivo `.env` privado del servidor o desactivar la precarga automática (`SEED_DEFAULT_ACCOUNTS=false`) una vez creadas las cuentas institucionales privadas desde `admin_sec`.
+

@@ -52,7 +52,7 @@
 **Respuesta:** La transmisión Syslog de la API hacia `zt-siem-collector:5514` se realiza con timeout acotado y manejo seguro de excepciones para no tumbar la disponibilidad clínica, mientras que la política de autorización en OPA sí es estrictamente *Fail-Closed*. En paralelo, Docker mantiene `restart: unless-stopped` y healthchecks activos sobre el colector.
 
 ### P7. ¿Cómo evitan que un atacante externo acceda a la Consola SOC en `siem.tralaleritosmigajeros.uk`?
-**Respuesta:** Con **defensa en profundidad**: el puerto de ingesta Syslog (`5514`) solo existe dentro de la red interna `audit_net` (inaccesible desde Internet), y el panel web (`:8080`) publicado por `cloudflared` está protegido por **Cloudflare Zero Trust Access**, que exige un código **One-Time PIN (OTP)** enviado únicamente a los correos autorizados de Ubaldo, Jezreel y Samuel.
+**Respuesta:** Con **defensa en profundidad**: el puerto de ingesta Syslog (`5514`) solo existe dentro de la red interna `audit_net` (inaccesible desde Internet), y el panel web (`:8080`) publicado por `cloudflared` está protegido por **Cloudflare Zero Trust Access**, que exige un código **One-Time PIN (OTP)** enviado exclusivamente a las **cuentas institucionales BUAP** (`@alumno.buap.mx` / `@correo.buap.mx`) autorizadas del equipo SOC. Además, la consola normaliza las marcas temporales a **`America/Mexico_City`** (con selector de zona horaria en tiempo real) manteniendo UTC en almacenamiento para interoperabilidad forense.
 
 ### P8. ¿Qué diferencia hay entre una alerta abierta y una reconocida (`ACK`) en tu consola SOC?
 **Respuesta:** Cuando se dispara una correlación, la alerta nace en estado abierto (`acknowledged = false`) destacando su severidad (`HIGH`/`CRITICAL`). El analista SOC puede investigar los eventos asociados y marcarla como atendida mediante `POST /api/v1/alerts/{id}/ack`, dejando trazabilidad del manejo del incidente.
@@ -61,13 +61,13 @@
 **Respuesta:** Representan **defensa en profundidad en capas complementarias**: Cloudflare frena ráfagas volumétricas externas en el borde (`10 req / 10 s` por IP), mientras que `RULE-001` en el SIEM detecta intentos distribuidos o sostenidos a ritmo más bajo ($\ge 5$ fallos en 60 s por cuenta/actor) que pasarían por debajo del umbral de borde.
 
 ### P10. ¿Qué cobertura de pruebas tiene tu módulo SIEM?
-**Respuesta:** `tests/test_siem_module_c.py` supera el **90% de cobertura** en el servicio SIEM, probando transmisión real por sockets UDP y TCP, parseo RFC 5424, enmascaramiento verificado directo en SQLite y disparo + `ACK` de las 3 reglas de correlación.
+**Respuesta:** `tests/test_siem_module_c.py` supera el **90% de cobertura** en el servicio SIEM (dentro de la suite global de **43/43 pruebas `pytest`**), probando transmisión real por sockets UDP y TCP, parseo RFC 5424, enmascaramiento verificado directo en SQLite y disparo + `ACK` de las 3 reglas de correlación.
 
 ---
 
 ## 4. Tu Bloque en la Demo en Vivo (Minutos 13 a 18)
 
-1. Abrir `https://siem.tralaleritosmigajeros.uk` y destacar la pantalla de **Cloudflare Zero Trust Access (OTP)** antes de entrar.
-2. En la Consola SOC, mostrar los **eventos RFC 5424** generados durante los bloques de Ubaldo y Jezreel (`AUTH_LOGIN_SUCCESS`, `CLINICAL_RECORD_CREATED`, `OPA_POLICY_DENIED`, `LIFECYCLE_ARCO_ERASURE`).
+1. Abrir `https://siem.tralaleritosmigajeros.uk` y destacar la pantalla de **Cloudflare Zero Trust Access (OTP con correo institucional BUAP)** antes de entrar.
+2. En la Consola SOC, mostrar los **eventos RFC 5424** generados durante los bloques de Ubaldo y Jezreel (`AUTH_LOGIN_SUCCESS`, `CLINICAL_RECORD_CREATED`, `OPA_POLICY_DENIED`, `LIFECYCLE_ARCO_ERASURE`) y el selector de zona horaria (`America/Mexico_City`).
 3. Ejecutar prueba de **sanitización en ingesta** (o `./infra/scripts/verify-siem-module-c.sh`) demostrando que una CURP, tarjeta Luhn y contraseña enviadas en una trama aparecen como `***` en la consola y en SQLite.
 4. Mostrar en vivo las alertas **`RULE-001`**, **`RULE-002` (`CRITICAL`)** y **`RULE-003`** disparadas en la consola y hacer clic en **`ACK`** para cerrar el ciclo de respuesta a incidentes.

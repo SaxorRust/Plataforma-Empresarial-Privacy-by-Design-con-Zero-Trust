@@ -34,7 +34,7 @@
 
 | ID | Estado | Peso | Elemento / Entregable | Rama / Rol | Evidencia / Criterio de Verificación |
 | :--- | :---: | :---: | :--- | :--- | :--- |
-| `F1-01` | [x] | 2% | Confirmar escenario, stack tecnológico y asignación de roles (Jezreel → Int. 1, Ubaldo → Int. 2, Samuel → Int. 3) | `main` / Todos | Definido en `docs/planeacion.md` y `pendientesYscripts/` |
+| `F1-01` | [x] | 2% | Confirmar escenario, stack tecnológico y asignación de roles (Jezreel → Int. 1, Ubaldo → Int. 2, Samuel → Int. 3) | `main` / Todos | Definido en `docs/planeacion.md` y `docs/DOCUMENTACION_TECNICA.md` |
 | `F1-02` | [x] | 2% | Definir estructura de ramas por rol y flujo de PR hacia `main` (infra crítica) | `main` | Ramas `role/privacidad-ciclo-vida`, `role/seguridad-infra`, `role/siem-soc` creadas |
 | `F1-03` | [x] | 3% | Preparar entorno base reproducible (`docker-compose.yml`, `.env.example`, redes aisladas, guía Ubuntu 26.04.1 LTS) | `main` / Ubaldo | `docker-compose.yml`, `infra/scripts/setup-ubuntu-vm.sh` y `docs/aprovisionamiento-vm.md` |
 | `F1-04` | [x] | 3% | Planeación formal del desarrollo (hitos diarios hacia el 1 de diciembre) | `main` / Todos | Cronograma en `docs/planeacion.md` |
@@ -45,9 +45,9 @@
 
 | ID | Estado | Peso | Elemento / Entregable | Rama / Rol | Evidencia / Criterio de Verificación |
 | :--- | :---: | :---: | :--- | :--- | :--- |
-| `MA-01` | [x] | 5% | **Autenticación robusta:** FIDO2/WebAuthn (Passkeys) + respaldo Argon2id con *Salt* único + *Pepper* | `role/seguridad-infra` (Ubaldo) | `/auth/*` operativo (Argon2id `$argon2id$v=19$m=65536,t=3,p=2`, Passkeys ECDSA P-256, JWT+logout); verificado con `pytest` y `verify-ma01-ma02.sh` |
+| `MA-01` | [x] | 5% | **Autenticación robusta:** FIDO2/WebAuthn (Passkeys) + respaldo Argon2id con *Salt* único + *Pepper* | `role/seguridad-infra` (Ubaldo) | `/auth/*` operativo (Argon2id `$argon2id$v=19$m=65536,t=3,p=2`, Passkeys ECDSA P-256, JWT con timeout implícito 2m + logout, IAM en `admin_sec`); verificado con `pytest` y `verify-ma01-ma02.sh` |
 | `MA-02` | [x] | 5% | **Segregación y bóveda (Vault):** Identificadores directos aislados de atributos sensibles | `role/privacidad-ciclo-vida` & `role/seguridad-infra` | Bóveda Vault (`Transit AEAD + KV v2 + pat_...`) integrada con `/clinical/records` y `/clinical/records/segregated` (cero PII directa en PostgreSQL + compensación ante fallo BD); verificado con `pytest` y `verify-module-a.sh` |
-| `MA-03` | [x] | 5% | **Prevención de Function Creep (OPA/ABAC):** Validación de propósito declarado por consulta | `role/privacidad-ciclo-vida` (Jezreel) | `OPAClient` fail-closed + `hospital_abac.rego` (13/13 `opa test` + `opa check --strict`); consultas sin `X-Purpose`, fuera de propósito, singularización de analista y `admin_sec` devuelven `403 Forbidden` |
+| `MA-03` | [x] | 5% | **Prevención de Function Creep (OPA/ABAC):** Validación de propósito declarado por consulta | `role/privacidad-ciclo-vida` (Jezreel) | `OPAClient` fail-closed + `hospital_abac.rego` (15/15 `opa test` + `opa check --strict`); consultas sin `X-Purpose`, fuera de propósito, singularización de analista y `admin_sec` devuelven `403 Forbidden` |
 | `MA-04` | [x] | 5% | **Minimización cuantitativa y cualitativa:** Filtrado de columnas y generalización según rol | `role/privacidad-ciclo-vida` (Jezreel) | `apply_minimization` proyecta `allowed_fields`, enmascara token en `enfermeria` (`pat_xxxx...yyyy`), generaliza `age_range` (`30-39`, `90+`) y `zip_generalized` (`72***`) en `analista` y oculta diagnósticos en `auditor_arco` |
 
 ---
@@ -70,7 +70,7 @@
 | `MC-01` | [x] | 6% | **Confinamiento del sistema:** Perfiles personalizados Seccomp-BPF y AppArmor (ej. bloqueo de `execve`, rutas restringidas) | `role/seguridad-infra` (Ubaldo) | `infra/seccomp/api-seccomp.json` (default-deny EPERM), `infra/apparmor/zt-hospital-api` + `docker-compose.apparmor.yml`, verificado con `verify-sandboxing-mc01.sh` (`Operation not permitted`), `pytest` y CI (`apparmor_parser` + prueba negativa Docker) |
 | `MC-02` | [x] | 5% | **Centralización Syslog (RFC 5424):** Envío estructurado de eventos de auditoría al colector SIEM | `role/siem-soc` (Samuel) | `SyslogAuditClient` en `services/api/app/audit/syslog_client.py` (auth, clinical, vault, lifecycle, OPA denials) + colector asíncrono UDP/TCP RFC 5424 (`services/siem/app/syslog_server.py`, `rfc5424.py`, `storage.py`) y endpoints/dashboard SOC en `:8080`; verificado con `pytest` (UDP+TCP real) y `verify-siem-module-c.sh` |
 | `MC-03` | [x] | 5% | **Sanitización en ingesta (Regex):** Ofuscación automática de tarjetas, CURP, contraseñas antes de persistir | `role/siem-soc` (Samuel) | `services/siem/app/sanitizer.py` enmascara con `***` tarjetas (Luhn), CURP, contraseñas/secretos, NSS, JWT y claves sensibles de `STRUCTURED-DATA` antes de insertar en SQLite; verificado directo en BD SQLite en `tests/test_siem_module_c.py` |
-| `MC-04` | [x] | 6% | **Reglas de correlación temporal (mín. 2):** Detección de fuerza bruta + alerta crítica por consultas masivas | `role/siem-soc` (Samuel) | `TemporalCorrelationEngine` (`services/siem/app/correlator.py`) con 3 reglas activas: `RULE-001` (`BRUTE_FORCE_LOGIN`), `RULE-002` (`MASS_RECORD_ACCESS`, `CRITICAL`) y `RULE-003` (`REPEATED_POLICY_DENIAL`), más `/api/v1/alerts`, `/ack`, `/rules`, `/stats` y consola SOC |
+| `MC-04` | [x] | 6% | **Reglas de correlación temporal (mín. 2):** Detección de fuerza bruta + alerta crítica por consultas masivas | `role/siem-soc` (Samuel) | `TemporalCorrelationEngine` (`services/siem/app/correlator.py`) con 3 reglas activas: `RULE-001` (`BRUTE_FORCE_LOGIN`), `RULE-002` (`MASS_RECORD_ACCESS`, `CRITICAL`) y `RULE-003` (`REPEATED_POLICY_DENIAL`), más `/api/v1/alerts`, `/ack`, `/rules`, `/stats` y consola SOC (zona horaria `America/Mexico_City`) |
 
 ---
 
@@ -78,10 +78,10 @@
 
 | ID | Estado | Peso | Elemento / Entregable | Rama / Rol | Evidencia / Criterio de Verificación |
 | :--- | :---: | :---: | :--- | :--- | :--- |
-| `F5-01` | [x] | 4% | **Suite de pruebas automatizadas:** Unitarias, integración, políticas ABAC, $k$-anonimato/$l$-diversidad, NIST 800-88 y correlación SIEM | Todos | `pytest` en verde (`38/38 passed`, cobertura 82% global y 90%+ en SIEM): auth, Vault, OPA/ABAC, minimización, TTL, Safe Harbor/$(k,l)$, ARCO/NIST 800-88, OWASP Top 10, Seccomp/AppArmor y SIEM/SOC (`test_siem_module_c.py`) |
+| `F5-01` | [x] | 4% | **Suite de pruebas automatizadas:** Unitarias, integración, políticas ABAC, $k$-anonimato/$l$-diversidad, NIST 800-88 y correlación SIEM | Todos | `pytest` en verde (`43/43 passed`, cobertura 82% global y >90% en SIEM) + `opa test` (`15/15`): auth, IAM, Vault, OPA/ABAC, minimización, TTL, Safe Harbor/$(k,l)$, ARCO/NIST 800-88, OWASP Top 10, Seccomp/AppArmor y SIEM/SOC (`test_siem_module_c.py`) |
 | `F5-02` | [x] | 3% | **GitHub Actions (CI):** Pipeline en `.github/workflows/ci.yml` ejecutando linter, tests y validación de seguridad en PRs a `main` | `role/privacidad-ciclo-vida` & `role/seguridad-infra` | 9/9 checks verdes en GitHub Actions (`ci.yml` + `security-owasp.yml` + `dependabot.yml`: Ruff, Pytest+Cov, OPA strict/tests, ShellCheck, pip-audit, Bandit, Semgrep OWASP Top 10, Gitleaks, Trivy, CodeQL v4 y `test_owasp_top10_security.py`) |
 | `F5-03` | [x] | 3% | **Túnel `cloudflared`:** Configuración reproducible para exponer la plataforma local hacia `tralaleritosmigajeros.uk` | `role/seguridad-infra` (Ubaldo) | `readyConnections: 4`, 0 errores, `tralaleritosmigajeros.uk` + `app.` + `siem.` operativos |
-| `F5-04` | [x] | 2% | **Endurecimiento Cloudflare:** SSL/TLS Strict, reglas WAF/Rate Limiting, cabeceras de seguridad y políticas Zero Trust | Ubaldo & Samuel | `verify-domain-security.sh` → `PASS=14 \| WARN=0 \| FAIL=0` + Access OTP en `siem.` |
+| `F5-04` | [x] | 2% | **Endurecimiento Cloudflare:** SSL/TLS Strict, reglas WAF/Rate Limiting, cabeceras de seguridad y políticas Zero Trust | Ubaldo & Samuel | `verify-domain-security.sh` → `PASS=14 \| WARN=0 \| FAIL=0` + Access OTP BUAP en `siem.` |
 
 ---
 
@@ -89,7 +89,7 @@
 
 | ID | Estado | Peso | Elemento / Entregable | Rama / Rol | Evidencia / Criterio de Verificación |
 | :--- | :---: | :---: | :--- | :--- | :--- |
-| `F6-01` | [x] | 5% | **Documentación del sistema (Markdown + PDF):** Arquitectura, diagramas, perfiles, evidencias de pruebas y certificados | Todos | Reporte técnico completo en `docs/DOCUMENTACION_TECNICA.md` y versión compilada en `docs/DOCUMENTACION_TECNICA.pdf` (incluye diagrama de arquitectura, evidencias E2E y capturas Cloudflare) |
+| `F6-01` | [x] | 5% | **Documentación del sistema (Markdown + PDF):** Arquitectura, diagramas, perfiles, evidencias de pruebas y certificados | Todos | Reporte técnico completo en `docs/DOCUMENTACION_TECNICA.md` y versión compilada en `docs/DOCUMENTACION_TECNICA.pdf` (incluye 2 diagramas de arquitectura, certificado NIST completo SHA-256, evidencias E2E y 4 capturas Cloudflare) |
 | `F6-02` | [x] | 5% | **Guías de Defensa Técnica personalizadas:** Material de estudio, flujo end-to-end y Q&A para **Jezreel**, **Samuel** y **Ubaldo** | Todos | Guías por rol en `docs/defensa/GUIA_DEFENSA_JEZREEL.md`, `docs/defensa/GUIA_DEFENSA_UBALDO.md` y `docs/defensa/GUIA_DEFENSA_SAMUEL.md` |
 | `F6-03` | [x] | 4% | **Ensayo de demo en vivo (20 min):** Guion paso a paso de demostración de los 3 módulos | Todos | Guion sincronizado minuto a minuto y plan B de contingencia en `docs/defensa/GUION_DEMO_20MIN.md` |
 
@@ -99,8 +99,8 @@
 
 | Fecha | ID(s) Completados | Responsable | Commit / PR | Notas |
 | :--- | :--- | :--- | :--- | :--- |
-| 2026-11-21 | Inicialización | Equipo | `762babe` | Lectura de pliego técnico y `pendientes.txt`. |
-| 2026-11-21 | Datos institucionales y stack base | Ubaldo | `93d3217` | Agregados `informacionInstitucional.txt`, `escenarioYtecnologias.txt` y copia PDF inicial. |
+| 2026-11-21 | Inicialización | Equipo | `762babe` | Lectura de pliego técnico y definición de alcance. |
+| 2026-11-21 | Datos institucionales y stack base | Ubaldo | `93d3217` | Agregados datos institucionales, escenario hospitalario y stack base. |
 | 2026-11-21 | Checklist y guía `cloudflared` | Ubaldo | `5b8a884` | `.gitignore`, `docs/CHECKLIST.md`, `infra/cloudflared/`. |
 | 2026-11-21 | `F1-01`, `F1-02`, `F1-03`, `F1-04` | Equipo | `75535bc` | Infraestructura Docker Compose segmentada, esquema SQL, política OPA base, guía Ubuntu 26.04.1 LTS, CI y ramas por rol (**Avance: 10%**). |
 | 2026-11-21 | `F5-03`, `F5-04` | Ubaldo | PR #1 | Túnel `cloudflared` (`readyConnections=4`), 4 WAF Custom Rules, Rate Limiting `/auth/`, Zero Trust Access en `siem.` y cabeceras Zero Trust verificados con `PASS=14 / WARN=0 / FAIL=0` (**Avance: 15%**). |
@@ -111,4 +111,5 @@
 | 2026-11-22 | `MC-01` (Seccomp-BPF + AppArmor) | Ubaldo | `role/seguridad-infra` | Perfil Seccomp-BPF default-deny (`infra/seccomp/api-seccomp.json` bloqueando `fork`/`vfork`/`subprocess`/`mount`/`unshare`/`ptrace`/`AF_PACKET`/`chmod` con `EPERM`), perfil AppArmor (`infra/apparmor/zt-hospital-api` + `docker-compose.apparmor.yml`), scripts `install-apparmor-profile.sh` y `verify-sandboxing-mc01.sh`, pruebas `test_sandboxing_mc01.py` y validación CI (`apparmor_parser` + prueba negativa Seccomp Docker) (**Avance: 66%**). |
 | 2026-11-23 | `MC-02`, `MC-03`, `MC-04`, `F5-01` | Samuel | `role/siem-soc` | Emisor Syslog RFC 5424 integrado en API (`services/api/app/audit/syslog_client.py` en auth, clinical, vault, lifecycle y denegaciones OPA), colector SIEM UDP/TCP RFC 5424 (`services/siem/app/`), pipeline de sanitización Regex pre-persistencia (tarjetas Luhn, CURP, contraseñas, NSS, JWT), motor de correlación temporal (3 reglas: fuerza bruta `RULE-001`, consultas masivas CRÍTICA `RULE-002` y denegaciones OPA `RULE-003`), consola SOC HTML/API, script `verify-siem-module-c.sh` y pruebas `test_siem_module_c.py` (`38/38 pytest`, `ruff` y `bandit` 0 hallazgos) (**Avance: 86%**). |
 | 2026-11-23 | Mejoras Portal Zero Trust UI | Ubaldo | `c8cae75` | Puerta de autenticación obligatoria (`#auth-gate`), botón de visualizar/ocultar contraseña en login y registro, y generador criptográfico de contraseñas (Web Crypto API, 16 chars) con botón de copiado. |
-| 2026-11-23 | `F6-01`, `F6-02`, `F6-03` | Equipo | `main` | Documentación técnica completa (`docs/DOCUMENTACION_TECNICA.md` y `docs/DOCUMENTACION_TECNICA.pdf`), guías personalizadas de defensa técnica para Jezreel, Ubaldo y Samuel (`docs/defensa/GUIA_DEFENSA_*.md`) y guion de demo en vivo de 20 minutos (`docs/defensa/GUION_DEMO_20MIN.md`) (**Avance: 100%**). |
+| 2026-11-23 | `F6-01`, `F6-02`, `F6-03` | Equipo | `dc66c32` | Documentación técnica completa (`docs/DOCUMENTACION_TECNICA.md` y `docs/DOCUMENTACION_TECNICA.pdf`), guías personalizadas de defensa técnica para Jezreel, Ubaldo y Samuel (`docs/defensa/GUIA_DEFENSA_*.md`) y guion de demo en vivo de 20 minutos (`docs/defensa/GUION_DEMO_20MIN.md`) (**Avance: 100%**). |
+| 2026-11-24 | Endurecimiento final Zero Trust y pulido de entrega | Equipo | `cad1e25`+ | Restricción de registro público a `paciente`, eliminación de `super_admin` (IAM en `admin_sec` con SoD), matriz de roles (`docs/MATRIZ_ROLES_PERMISOS.md`), timeout implícito de 2 min en backend, zona horaria `America/Mexico_City` con selector en SIEM, limpieza de borradores, actualización integral de guías/PDF (`43/43 pytest`, `15/15 opa test`, 9/9 CI en verde). |

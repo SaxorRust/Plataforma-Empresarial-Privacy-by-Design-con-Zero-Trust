@@ -897,8 +897,8 @@ def test_paciente_titular_sees_only_own_record_and_identity_anti_idor():
 
     my_id_resp = client.get("/clinical/my-identity", headers=own_headers)
     assert my_id_resp.status_code == 200
-    assert my_id_resp.json()["patient_pii"]["full_name"] == "María Fernanda Morales Vega"
-    assert my_id_resp.json()["patient_pii"]["curp"] == "MOVM920514MPLRGD07"
+    assert my_id_resp.json()["full_name"] == "María Fernanda Morales Vega"
+    assert my_id_resp.json()["curp"] == "MOVM920514MPLRGD07"
 
     # 4) Anti-IDOR estricto: NO puede leer expediente ajeno ni filtrar por token ajeno ni usar /vault/patients
     assert client.get(f"/clinical/records/{other_record_id}", headers=own_headers).status_code == 403

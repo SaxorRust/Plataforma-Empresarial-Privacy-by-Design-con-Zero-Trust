@@ -42,6 +42,9 @@ def test_api_portal_ui_and_static_assets():
     assert 'id="btn-generate-password"' in portal_resp.text
     assert 'id="btn-copy-reg-password"' in portal_resp.text
     assert 'id="session-idle-timer"' not in portal_resp.text
+    assert 'id="global-purpose-badge"' in portal_resp.text
+    assert 'id="global-purpose-select"' not in portal_resp.text
+    assert 'id="card-patient-identity"' in portal_resp.text
     assert 'id="tab-users"' in portal_resp.text
     assert 'id="nav-tab-users" data-tab="tab-users" data-roles="admin_sec"' in portal_resp.text
     assert "super_admin" not in portal_resp.text
@@ -80,7 +83,7 @@ def test_api_portal_ui_and_static_assets():
     assert "/clinical/records/segregated" in js_resp.text
     assert "setPasswordVisibility" in js_resp.text
     assert "generateSecurePassword" in js_resp.text
-    assert "handlePurposeChange" in js_resp.text
+    assert "global-purpose-badge" in js_resp.text
     assert "inactivityTimeoutSeconds" not in js_resp.text
     assert "recordUserActivity" not in js_resp.text
     assert "DEMO_PASSWORD" not in js_resp.text

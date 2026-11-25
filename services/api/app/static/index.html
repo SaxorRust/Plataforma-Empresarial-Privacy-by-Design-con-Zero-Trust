@@ -173,17 +173,9 @@
       </div>
 
       <div class="context-toolbar">
-        <div class="purpose-selector-wrap">
-          <label for="global-purpose-select">X-Purpose (MA-03):</label>
-          <select id="global-purpose-select">
-            <option value="atencion_medica">atencion_medica (Clínica)</option>
-            <option value="investigacion_estadistica">investigacion_estadistica (Analítica)</option>
-            <option value="ejercicio_arco">ejercicio_arco (Derechos ARCO)</option>
-            <option value="mantenimiento_ttl">mantenimiento_ttl (SecOps TTL)</option>
-            <option value="acceso_titular">acceso_titular (Paciente)</option>
-            <option value="marketing_comercial">marketing_comercial (Prueba 403 Function Creep)</option>
-            <option value="">(Sin propósito - Prueba 403 Default Deny)</option>
-          </select>
+        <div class="purpose-selector-wrap" title="Propósito declarado automáticamente según tu rol ABAC (MA-03 — prevención de Function Creep).">
+          <span class="purpose-badge-label">X-Purpose (MA-03):</span>
+          <span class="badge badge-info purpose-badge-value" id="global-purpose-badge">atencion_medica</span>
         </div>
 
         <div class="session-pill" id="session-indicator" title="amr=pwd significa autenticación por contraseña Argon2id; webauthn+fido2 significa Passkey FIDO2.">

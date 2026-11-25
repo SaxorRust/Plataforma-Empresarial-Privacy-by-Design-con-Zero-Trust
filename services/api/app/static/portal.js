@@ -199,13 +199,18 @@
   }
 
   function getSelectedPurpose() {
-    const sel = byId("global-purpose-select");
-    return sel ? sel.value : "atencion_medica";
+    if (state.activePurpose !== undefined && state.activePurpose !== null) {
+      return state.activePurpose;
+    }
+    return state.user ? (ROLE_DEFAULT_PURPOSE[state.user.role] || "atencion_medica") : "atencion_medica";
   }
 
   function setSelectedPurpose(purposeValue) {
-    const sel = byId("global-purpose-select");
-    if (sel) sel.value = purposeValue;
+    state.activePurpose = purposeValue;
+    const badge = byId("global-purpose-badge");
+    if (badge) {
+      badge.textContent = purposeValue || "(sin propósito)";
+    }
   }
 
   function logInspector(method, path, status, reqId, payload) {
@@ -297,17 +302,6 @@
     const activeTabId = activePanel ? activePanel.id : "";
     if (!activeTabId || !visibleTabs.includes(activeTabId)) {
       switchTab(visibleTabs[0] || "tab-auth");
-    }
-  }
-
-  function handlePurposeChange() {
-    if (!state.user) return;
-    const purpose = getSelectedPurpose();
-    if (!purpose || purpose === "marketing_comercial") {
-      showToast(
-        "X-Purpose ajustado para prueba Zero Trust: OPA denegará operaciones clínicas/lifecycle con HTTP 403.",
-        "warn"
-      );
     }
   }
 
@@ -1520,11 +1514,6 @@
     // Authenticated Workspace Handlers
     byId("global-toast-close").addEventListener("click", hideToast);
     byId("btn-top-logout").addEventListener("click", handleLogout);
-
-    const purposeSelect = byId("global-purpose-select");
-    if (purposeSelect) {
-      purposeSelect.addEventListener("change", handlePurposeChange);
-    }
 
     document.querySelectorAll(".nav-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {

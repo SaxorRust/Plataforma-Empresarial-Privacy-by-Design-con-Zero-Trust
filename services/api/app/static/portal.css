@@ -231,7 +231,7 @@ body {
   padding: 5px 10px;
 }
 
-.purpose-selector-wrap label {
+.purpose-badge-label {
   font-size: 0.76rem;
   font-weight: 600;
   color: var(--text-secondary);
@@ -239,20 +239,10 @@ body {
   white-space: nowrap;
 }
 
-.purpose-selector-wrap select {
-  background: var(--bg-input);
-  color: var(--text-primary);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  padding: 5px 10px;
-  font-size: 0.82rem;
+.purpose-badge-value {
   font-family: var(--font-mono);
-  cursor: pointer;
-}
-
-.purpose-selector-wrap select:focus {
-  outline: none;
-  border-color: var(--border-focus);
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 .session-pill {

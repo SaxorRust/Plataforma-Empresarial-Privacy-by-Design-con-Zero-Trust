@@ -115,7 +115,7 @@ Cada petición clínica o de ciclo de vida exige **dos cosas**: tu identidad aut
 2. **Cargar pacientes segregados (como `medico_demo`):**
    - Ve a **2. Clínica & Bóveda PII** → haz clic en **"+ Cargar Cohorte Clínica (6 Pacientes)"** o llena el formulario de alta segregada.
    - Verifica que en la tabla solo aparece el token opaco `pat_...` y usa **"Resolver PII (Vault)"** para comprobar la detokenización controlada.
-   - Cambia en la barra superior `X-Purpose` a **`marketing_comercial`** y pulsa **"Consultar Expedientes"** → observarás el bloqueo `HTTP 403` de OPA previniendo *Function Creep*.
+   - La cabecera `X-Purpose: atencion_medica` se muestra como badge de solo lectura acorde al rol; para demostrar el bloqueo de *Function Creep* (`HTTP 403`), usa el simulador en **3. Motor ABAC / OPA** (como `auditor_arco`/`admin_sec`) o envía una petición con `curl -H "X-Purpose: marketing_comercial"` / `./infra/scripts/verify-module-a.sh`.
 3. **Comprobar Minimización y Anonimización (como `analista_demo`):**
    - Pulsa **"Cerrar Sesión (Revocar JWT)"** (la app se bloquea de nuevo en el login).
    - Inicia sesión con `analista_demo` (rol `analista`). Verás que en **Clínica** las edades aparecen como rangos (`30-39`) y los CP como `72***`.

@@ -119,8 +119,5 @@ def seed_demo_patient_record(
             pass
         raise
 
-    logger.info(
-        "Expediente segregado inicial vinculado a paciente_demo (token=%s)",
-        tokenized.opaque_patient_token,
-    )
+    logger.info("Expediente segregado inicial vinculado al titular paciente_demo.")
     return tokenized.opaque_patient_token
